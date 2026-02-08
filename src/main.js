@@ -6,12 +6,15 @@ const SUPABASE_URL = 'https://hjyvteniydaswgohnasr.supabase.co'
 const BUCKET = 'photos'
 const MANIFEST_URL = '/manifest.json'
 
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+
 function fullUrl(filename) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${filename}`
 }
 
 function hiResUrl(filename) {
-  return `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}/${filename}?width=1200&height=1200&resize=contain&quality=75`
+  const size = isMobile ? 600 : 1200
+  return `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}/${filename}?width=${size}&height=${size}&resize=contain&quality=75`
 }
 
 // Scene
@@ -24,10 +27,18 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 camera.position.set(0, 0, 150)
 
 // Renderer
-const renderer = new THREE.WebGLRenderer({ antialias: true })
+const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'default' })
 renderer.setSize(window.innerWidth, window.innerHeight)
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio, 2))
 document.body.appendChild(renderer.domElement)
+
+// Handle WebGL context loss
+renderer.domElement.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault()
+})
+renderer.domElement.addEventListener('webglcontextrestored', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight)
+})
 
 // Controls
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -55,7 +66,7 @@ let downloading = false
 // Particle dust
 function createDust() {
   const geo = new THREE.BufferGeometry()
-  const count = 2000
+  const count = isMobile ? 500 : 2000
   const positions = new Float32Array(count * 3)
   for (let i = 0; i < count * 3; i++) {
     positions[i] = (Math.random() - 0.5) * SPREAD * 3
@@ -72,16 +83,33 @@ function createDust() {
 }
 createDust()
 
+// Downscale image on mobile to reduce GPU memory
+const MOBILE_TEX_SIZE = 128
+function downscaleImage(img) {
+  if (!isMobile) return img
+  const canvas = document.createElement('canvas')
+  const aspect = img.width / img.height
+  if (aspect >= 1) {
+    canvas.width = MOBILE_TEX_SIZE
+    canvas.height = Math.round(MOBILE_TEX_SIZE / aspect)
+  } else {
+    canvas.height = MOBILE_TEX_SIZE
+    canvas.width = Math.round(MOBILE_TEX_SIZE * aspect)
+  }
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+  return canvas
+}
+
 // Add photo from base64 data URL
 function addPhoto(dataUrl, filename) {
   const img = new Image()
   img.onload = () => {
-    const texture = new THREE.Texture(img)
+    const source = downscaleImage(img)
+    const texture = new THREE.Texture(source)
     texture.needsUpdate = true
     texture.colorSpace = THREE.SRGBColorSpace
 
     const aspect = img.width / img.height
-    // Size photos so the longest side is ~30 units
     const size = 25 + Math.random() * 10
     const width = aspect >= 1 ? size : size * aspect
     const height = aspect >= 1 ? size / aspect : size
@@ -119,12 +147,19 @@ function addPhoto(dataUrl, filename) {
   img.src = dataUrl
 }
 
-// Load all photos from manifest (single fetch)
+// Load photos in batches to avoid GPU memory spike
 async function loadPhotos() {
   try {
     const res = await fetch(MANIFEST_URL)
     const manifest = await res.json()
-    manifest.forEach(({ name, thumb }) => addPhoto(thumb, name))
+    const BATCH = isMobile ? 10 : 50
+    for (let i = 0; i < manifest.length; i += BATCH) {
+      const batch = manifest.slice(i, i + BATCH)
+      batch.forEach(({ name, thumb }) => addPhoto(thumb, name))
+      if (isMobile && i + BATCH < manifest.length) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+    }
   } catch (err) {
     console.error('Failed to load manifest:', err)
   }
