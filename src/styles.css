@@ -51,3 +51,28 @@ canvas {
   z-index: 10;
   letter-spacing: 0.5px;
 }
+
+#toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: lowercase;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 20;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.toast-show {
+  opacity: 1 !important;
+  transform: translateX(-50%) translateY(0) !important;
+}
+
+.toast-hide {
+  opacity: 0 !important;
+  transform: translateX(-50%) translateY(-10px) !important;
+}

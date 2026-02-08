@@ -33,7 +33,12 @@ scene.add(ambient)
 
 // State
 const photos = []
+const photoDataUrls = new Map() // mesh.uuid -> original dataURL
 const SPREAD = 400
+const raycaster = new THREE.Raycaster()
+const mouse = new THREE.Vector2()
+let mouseDownPos = null
+let downloading = false
 
 // Particle dust for atmosphere
 function createDust() {
@@ -87,10 +92,12 @@ function addPhoto(imageUrl) {
     mesh.rotation.z = (Math.random() - 0.5) * 0.15
 
     scene.add(mesh)
+    photoDataUrls.set(mesh.uuid, imageUrl)
     photos.push({
       mesh,
       floatSpeed: 0.2 + Math.random() * 0.5,
       floatOffset: Math.random() * Math.PI * 2,
+      glowIntensity: 0,
     })
 
     updateCounter()
@@ -139,6 +146,71 @@ document.addEventListener('drop', (e) => {
   })
 })
 
+// Download with glow effect
+function downloadPhoto(photoEntry) {
+  if (downloading) return
+  downloading = true
+
+  const { mesh } = photoEntry
+  const dataUrl = photoDataUrls.get(mesh.uuid)
+  if (!dataUrl) { downloading = false; return }
+
+  // Trigger glow animation
+  photoEntry.glowIntensity = 1.0
+
+  // Download after a brief glow moment
+  setTimeout(() => {
+    const a = document.createElement('a')
+    a.href = dataUrl
+    a.download = `photo-${Date.now()}.png`
+    a.click()
+    showToast()
+    downloading = false
+  }, 300)
+}
+
+// Minimal toast notification
+function showToast() {
+  let toast = document.getElementById('toast')
+  if (!toast) {
+    toast = document.createElement('div')
+    toast.id = 'toast'
+    document.body.appendChild(toast)
+  }
+  toast.textContent = 'saved'
+  toast.className = 'toast-show'
+  setTimeout(() => { toast.className = 'toast-hide' }, 1200)
+}
+
+// Click detection — only trigger if mouse didn't drag
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  mouseDownPos = { x: e.clientX, y: e.clientY }
+})
+
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!mouseDownPos) return
+  const dx = e.clientX - mouseDownPos.x
+  const dy = e.clientY - mouseDownPos.y
+  const dist = Math.sqrt(dx * dx + dy * dy)
+  mouseDownPos = null
+
+  // Only count as click if mouse barely moved (not a drag/orbit)
+  if (dist > 4) return
+
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
+
+  raycaster.setFromCamera(mouse, camera)
+  const meshes = photos.map((p) => p.mesh)
+  const intersects = raycaster.intersectObjects(meshes)
+
+  if (intersects.length > 0) {
+    const hitMesh = intersects[0].object
+    const entry = photos.find((p) => p.mesh === hitMesh)
+    if (entry) downloadPhoto(entry)
+  }
+})
+
 // Render loop
 const clock = new THREE.Clock()
 
@@ -146,9 +218,22 @@ function animate() {
   requestAnimationFrame(animate)
   const t = clock.getElapsedTime()
 
-  photos.forEach(({ mesh, floatSpeed, floatOffset }) => {
+  photos.forEach((entry) => {
+    const { mesh, floatSpeed, floatOffset } = entry
     mesh.position.y += Math.sin(t * floatSpeed + floatOffset) * 0.005
     mesh.rotation.y += 0.0003
+
+    // Glow fade animation — pulse scale + white flash via color
+    if (entry.glowIntensity > 0) {
+      entry.glowIntensity = Math.max(0, entry.glowIntensity - 0.018)
+      const g = entry.glowIntensity
+      const boost = 1 + g * 1.5
+      mesh.material.color.setRGB(boost, boost, boost)
+      mesh.scale.setScalar(1 + g * 0.06)
+    } else if (mesh.material.color.r !== 1) {
+      mesh.material.color.setRGB(1, 1, 1)
+      mesh.scale.setScalar(1)
+    }
   })
 
   controls.update()
