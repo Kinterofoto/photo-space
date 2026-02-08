@@ -14,16 +14,6 @@ canvas {
   display: block;
 }
 
-#counter {
-  position: fixed;
-  bottom: 40px;
-  left: 32px;
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 13px;
-  z-index: 10;
-  letter-spacing: 0.5px;
-}
-
 #toast {
   position: fixed;
   bottom: 80px;

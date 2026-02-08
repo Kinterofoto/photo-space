@@ -124,7 +124,6 @@ async function loadPhotos() {
   try {
     const res = await fetch(MANIFEST_URL)
     const manifest = await res.json()
-    document.getElementById('counter').textContent = `${manifest.length} photos`
     manifest.forEach(({ name, thumb }) => addPhoto(thumb, name))
   } catch (err) {
     console.error('Failed to load manifest:', err)
