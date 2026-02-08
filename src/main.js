@@ -1,22 +1,11 @@
 import './styles.css'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { createClient } from '@supabase/supabase-js'
 
-// Supabase
 const SUPABASE_URL = 'https://hjyvteniydaswgohnasr.supabase.co'
-const supabase = createClient(
-  SUPABASE_URL,
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqeXZ0ZW5peWRhc3dnb2huYXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1NDQ4MDAsImV4cCI6MjA4NjEyMDgwMH0.fXb1rptO2FjapwxU-kHDDsgQr2mlLQKLsbbtc3GZZPw'
-)
 const BUCKET = 'photos'
+const MANIFEST_URL = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/manifest.json`
 
-// Thumbnail URL via Supabase image transform
-function thumbUrl(filename) {
-  return `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}/${filename}?width=400&quality=40`
-}
-
-// Full quality public URL
 function fullUrl(filename) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${filename}`
 }
@@ -52,7 +41,7 @@ scene.add(ambient)
 
 // State
 const photos = []
-const photoFilenames = new Map() // mesh.uuid -> original filename
+const photoFilenames = new Map()
 const SPREAD = 400
 const raycaster = new THREE.Raycaster()
 const mouse = new THREE.Vector2()
@@ -79,10 +68,9 @@ function createDust() {
 }
 createDust()
 
-// Add a photo into 3D space
-function addPhoto(displayUrl, filename) {
+// Add photo from base64 data URL
+function addPhoto(dataUrl, filename) {
   const img = new Image()
-  img.crossOrigin = 'anonymous'
   img.onload = () => {
     const texture = new THREE.Texture(img)
     texture.needsUpdate = true
@@ -119,63 +107,24 @@ function addPhoto(displayUrl, filename) {
       floatOffset: Math.random() * Math.PI * 2,
       glowIntensity: 0,
     })
-
-    updateCounter()
   }
-  img.src = displayUrl
+  img.src = dataUrl
 }
 
-// Load all photos from Supabase bucket root
+// Load all photos from manifest (single fetch)
 async function loadPhotos() {
-  // Supabase list returns max 1000 per call, paginate if needed
-  let allFiles = []
-  let offset = 0
-  const PAGE = 1000
-  while (true) {
-    const { data, error } = await supabase.storage.from(BUCKET).list('', {
-      limit: PAGE,
-      offset,
-      sortBy: { column: 'name', order: 'asc' },
-    })
-    if (error) { console.error('Failed to list photos:', error.message); break }
-    if (!data || data.length === 0) break
-    allFiles = allFiles.concat(data)
-    if (data.length < PAGE) break
-    offset += PAGE
-  }
-
-  const imageFiles = allFiles.filter((f) =>
-    f.name.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i)
-  )
-
-  updateCounter(imageFiles.length)
-
-  // Load in batches to avoid overwhelming the browser
-  const BATCH = 10
-  for (let i = 0; i < imageFiles.length; i += BATCH) {
-    const batch = imageFiles.slice(i, i + BATCH)
-    batch.forEach((file) => {
-      addPhoto(thumbUrl(file.name), file.name)
-    })
-    // Small pause between batches so the scene renders progressively
-    if (i + BATCH < imageFiles.length) {
-      await new Promise((r) => setTimeout(r, 100))
-    }
+  try {
+    const res = await fetch(MANIFEST_URL)
+    const manifest = await res.json()
+    document.getElementById('counter').textContent = `${manifest.length} photos`
+    manifest.forEach(({ name, thumb }) => addPhoto(thumb, name))
+  } catch (err) {
+    console.error('Failed to load manifest:', err)
   }
 }
 loadPhotos()
 
-// Counter display
-function updateCounter(total) {
-  const el = document.getElementById('counter')
-  if (total !== undefined) {
-    el.textContent = total > 0 ? `${total} photos` : ''
-    return
-  }
-  el.textContent = photos.length > 0 ? `${photos.length} photo${photos.length > 1 ? 's' : ''}` : ''
-}
-
-// Download full quality with glow effect
+// Download full quality
 function downloadPhoto(photoEntry) {
   if (downloading) return
   downloading = true
