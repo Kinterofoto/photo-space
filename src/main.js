@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
 const SUPABASE_URL = 'https://hjyvteniydaswgohnasr.supabase.co'
 const BUCKET = 'photos'
-const MANIFEST_URL = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/manifest.json`
+const MANIFEST_URL = '/manifest.json'
 
 function fullUrl(filename) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${filename}`
@@ -13,11 +13,11 @@ function fullUrl(filename) {
 // Scene
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x000000)
-scene.fog = new THREE.FogExp2(0x000000, 0.0015)
+scene.fog = new THREE.FogExp2(0x000000, 0.003)
 
 // Camera
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000)
-camera.position.set(0, 0, 100)
+camera.position.set(0, 0, 150)
 
 // Renderer
 const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -42,7 +42,7 @@ scene.add(ambient)
 // State
 const photos = []
 const photoFilenames = new Map()
-const SPREAD = 400
+const SPREAD = 200
 const raycaster = new THREE.Raycaster()
 const mouse = new THREE.Vector2()
 let mouseDownPos = null
@@ -77,8 +77,10 @@ function addPhoto(dataUrl, filename) {
     texture.colorSpace = THREE.SRGBColorSpace
 
     const aspect = img.width / img.height
-    const height = 15 + Math.random() * 10
-    const width = height * aspect
+    // Size photos so the longest side is ~30 units
+    const size = 25 + Math.random() * 10
+    const width = aspect >= 1 ? size : size * aspect
+    const height = aspect >= 1 ? size / aspect : size
 
     const geo = new THREE.PlaneGeometry(width, height)
     const mat = new THREE.MeshBasicMaterial({

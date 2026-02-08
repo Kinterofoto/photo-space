@@ -37,7 +37,7 @@ async function main() {
     const batch = imageFiles.slice(i, i + BATCH)
     const results = await Promise.all(
       batch.map(async (file) => {
-        const thumbUrl = `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}/${file.name}?width=150&quality=20`
+        const thumbUrl = `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}/${file.name}?width=300&height=300&resize=contain&quality=30`
         try {
           const res = await fetch(thumbUrl)
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -59,14 +59,19 @@ async function main() {
   const sizeKB = Math.round(json.length / 1024)
   console.log(`\nManifest: ${manifest.length} photos, ${sizeKB}kb`)
 
-  // Upload manifest to bucket
+  // Save locally
+  writeFileSync(new URL('../public/manifest.json', import.meta.url), json)
+  console.log('Saved to public/manifest.json')
+
+  // Also try to upload to bucket
+  await supabase.storage.from(BUCKET).remove(['manifest.json'])
   const { error } = await supabase.storage.from(BUCKET).upload(
     'manifest.json',
     json,
-    { contentType: 'application/json', upsert: true }
+    { contentType: 'application/json' }
   )
-  if (error) console.error('Upload failed:', error.message)
-  else console.log('Uploaded manifest.json to bucket')
+  if (error) console.error('Bucket upload failed (use local):', error.message)
+  else console.log('Also uploaded to bucket')
 }
 
 main()
