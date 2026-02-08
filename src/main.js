@@ -1,6 +1,14 @@
 import './styles.css'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { createClient } from '@supabase/supabase-js'
+
+// Supabase
+const supabase = createClient(
+  'https://hjyvteniydaswgohnasr.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqeXZ0ZW5peWRhc3dnb2huYXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1NDQ4MDAsImV4cCI6MjA4NjEyMDgwMH0.fXb1rptO2FjapwxU-kHDDsgQr2mlLQKLsbbtc3GZZPw'
+)
+const BUCKET = 'photos'
 
 // Scene
 const scene = new THREE.Scene()
@@ -33,7 +41,7 @@ scene.add(ambient)
 
 // State
 const photos = []
-const photoDataUrls = new Map() // mesh.uuid -> original dataURL
+const photoUrls = new Map() // mesh.uuid -> public download URL
 const SPREAD = 400
 const raycaster = new THREE.Raycaster()
 const mouse = new THREE.Vector2()
@@ -60,9 +68,20 @@ function createDust() {
 }
 createDust()
 
-// Add a photo into 3D space
-function addPhoto(imageUrl) {
+// Upload file to Supabase and add to scene
+async function uploadAndAddPhoto(file) {
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${file.name.split('.').pop()}`
+  const { error } = await supabase.storage.from(BUCKET).upload(filename, file)
+  if (error) { console.error('Upload failed:', error.message); return }
+
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(filename)
+  addPhoto(data.publicUrl)
+}
+
+// Add a photo into 3D space from a URL
+function addPhoto(publicUrl) {
   const img = new Image()
+  img.crossOrigin = 'anonymous'
   img.onload = () => {
     const texture = new THREE.Texture(img)
     texture.needsUpdate = true
@@ -92,7 +111,7 @@ function addPhoto(imageUrl) {
     mesh.rotation.z = (Math.random() - 0.5) * 0.15
 
     scene.add(mesh)
-    photoDataUrls.set(mesh.uuid, imageUrl)
+    photoUrls.set(mesh.uuid, publicUrl)
     photos.push({
       mesh,
       floatSpeed: 0.2 + Math.random() * 0.5,
@@ -102,8 +121,21 @@ function addPhoto(imageUrl) {
 
     updateCounter()
   }
-  img.src = imageUrl
+  img.src = publicUrl
 }
+
+// Load existing photos from Supabase on startup
+async function loadPhotos() {
+  const { data, error } = await supabase.storage.from(BUCKET).list('', { limit: 500 })
+  if (error) { console.error('Failed to list photos:', error.message); return }
+
+  const imageFiles = data.filter((f) => f.name.match(/\.(jpg|jpeg|png|webp|gif)$/i))
+  imageFiles.forEach((file) => {
+    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(file.name)
+    addPhoto(urlData.publicUrl)
+  })
+}
+loadPhotos()
 
 // Counter display
 function updateCounter() {
@@ -120,9 +152,7 @@ uploadBtn.addEventListener('click', () => fileInput.click())
 fileInput.addEventListener('change', (e) => {
   Array.from(e.target.files).forEach((file) => {
     if (!file.type.startsWith('image/')) return
-    const reader = new FileReader()
-    reader.onload = (ev) => addPhoto(ev.target.result)
-    reader.readAsDataURL(file)
+    uploadAndAddPhoto(file)
   })
   fileInput.value = ''
 })
@@ -140,9 +170,7 @@ document.addEventListener('drop', (e) => {
   uploadBtn.style.background = ''
   Array.from(e.dataTransfer.files).forEach((file) => {
     if (!file.type.startsWith('image/')) return
-    const reader = new FileReader()
-    reader.onload = (ev) => addPhoto(ev.target.result)
-    reader.readAsDataURL(file)
+    uploadAndAddPhoto(file)
   })
 })
 
@@ -152,19 +180,27 @@ function downloadPhoto(photoEntry) {
   downloading = true
 
   const { mesh } = photoEntry
-  const dataUrl = photoDataUrls.get(mesh.uuid)
-  if (!dataUrl) { downloading = false; return }
+  const url = photoUrls.get(mesh.uuid)
+  if (!url) { downloading = false; return }
 
   // Trigger glow animation
   photoEntry.glowIntensity = 1.0
 
   // Download after a brief glow moment
-  setTimeout(() => {
-    const a = document.createElement('a')
-    a.href = dataUrl
-    a.download = `photo-${Date.now()}.png`
-    a.click()
-    showToast()
+  setTimeout(async () => {
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `photo-${Date.now()}.${blob.type.split('/')[1] || 'png'}`
+      a.click()
+      URL.revokeObjectURL(blobUrl)
+      showToast()
+    } catch (err) {
+      console.error('Download failed:', err)
+    }
     downloading = false
   }, 300)
 }
