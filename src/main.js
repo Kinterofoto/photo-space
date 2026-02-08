@@ -68,18 +68,55 @@ function createDust() {
 }
 createDust()
 
-// Upload file to Supabase and add to scene
-async function uploadAndAddPhoto(file) {
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${file.name.split('.').pop()}`
-  const { error } = await supabase.storage.from(BUCKET).upload(filename, file)
-  if (error) { console.error('Upload failed:', error.message); return }
-
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(filename)
-  addPhoto(data.publicUrl)
+// Compress image to a ~100kb JPEG thumbnail
+function createThumbnail(file, maxSize = 800) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      let { width, height } = img
+      if (width > height && width > maxSize) {
+        height = Math.round(height * (maxSize / width))
+        width = maxSize
+      } else if (height > maxSize) {
+        width = Math.round(width * (maxSize / height))
+        height = maxSize
+      }
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(resolve, 'image/jpeg', 0.6)
+    }
+    img.src = URL.createObjectURL(file)
+  })
 }
 
-// Add a photo into 3D space from a URL
-function addPhoto(publicUrl) {
+// Upload original + thumbnail to Supabase and add to scene
+async function uploadAndAddPhoto(file) {
+  const baseName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const ext = file.name.split('.').pop()
+
+  // Upload original
+  const origPath = `originals/${baseName}.${ext}`
+  const { error: origErr } = await supabase.storage.from(BUCKET).upload(origPath, file)
+  if (origErr) { console.error('Upload original failed:', origErr.message); return }
+
+  // Create and upload thumbnail
+  const thumbBlob = await createThumbnail(file)
+  const thumbPath = `thumbs/${baseName}.jpg`
+  const { error: thumbErr } = await supabase.storage.from(BUCKET).upload(thumbPath, thumbBlob, {
+    contentType: 'image/jpeg',
+  })
+  if (thumbErr) { console.error('Upload thumb failed:', thumbErr.message); return }
+
+  const { data: thumbUrl } = supabase.storage.from(BUCKET).getPublicUrl(thumbPath)
+  const { data: origUrl } = supabase.storage.from(BUCKET).getPublicUrl(origPath)
+  addPhoto(thumbUrl.publicUrl, origUrl.publicUrl)
+}
+
+// Add a photo into 3D space (thumbUrl for display, originalUrl for download)
+function addPhoto(thumbUrl, originalUrl) {
   const img = new Image()
   img.crossOrigin = 'anonymous'
   img.onload = () => {
@@ -111,7 +148,7 @@ function addPhoto(publicUrl) {
     mesh.rotation.z = (Math.random() - 0.5) * 0.15
 
     scene.add(mesh)
-    photoUrls.set(mesh.uuid, publicUrl)
+    photoUrls.set(mesh.uuid, originalUrl)
     photos.push({
       mesh,
       floatSpeed: 0.2 + Math.random() * 0.5,
@@ -121,18 +158,34 @@ function addPhoto(publicUrl) {
 
     updateCounter()
   }
-  img.src = publicUrl
+  img.src = thumbUrl
 }
 
 // Load existing photos from Supabase on startup
 async function loadPhotos() {
-  const { data, error } = await supabase.storage.from(BUCKET).list('', { limit: 500 })
-  if (error) { console.error('Failed to list photos:', error.message); return }
+  const [thumbsRes, originalsRes] = await Promise.all([
+    supabase.storage.from(BUCKET).list('thumbs', { limit: 500 }),
+    supabase.storage.from(BUCKET).list('originals', { limit: 500 }),
+  ])
+  if (thumbsRes.error) { console.error('Failed to list thumbs:', thumbsRes.error.message); return }
 
-  const imageFiles = data.filter((f) => f.name.match(/\.(jpg|jpeg|png|webp|gif)$/i))
-  imageFiles.forEach((file) => {
-    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(file.name)
-    addPhoto(urlData.publicUrl)
+  // Map baseName -> original filename
+  const origMap = new Map()
+  if (originalsRes.data) {
+    originalsRes.data.forEach((f) => {
+      const base = f.name.replace(/\.[^.]+$/, '')
+      origMap.set(base, f.name)
+    })
+  }
+
+  const thumbFiles = thumbsRes.data.filter((f) => f.name.match(/\.(jpg|jpeg|png|webp|gif)$/i))
+  thumbFiles.forEach((file) => {
+    const baseName = file.name.replace(/\.[^.]+$/, '')
+    const origFilename = origMap.get(baseName)
+    const { data: thumbUrl } = supabase.storage.from(BUCKET).getPublicUrl(`thumbs/${file.name}`)
+    const origPath = origFilename ? `originals/${origFilename}` : `thumbs/${file.name}`
+    const { data: origUrl } = supabase.storage.from(BUCKET).getPublicUrl(origPath)
+    addPhoto(thumbUrl.publicUrl, origUrl.publicUrl)
   })
 }
 loadPhotos()
