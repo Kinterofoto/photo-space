@@ -7,6 +7,8 @@ const BUCKET = 'photos'
 const MANIFEST_URL = '/manifest.json'
 
 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+const MAX_MOBILE_TEXTURES = 30
+const MOBILE_LOAD_DIST = 120
 
 function fullUrl(filename) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${filename}`
@@ -33,10 +35,13 @@ renderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio, 2))
 document.body.appendChild(renderer.domElement)
 
 // Handle WebGL context loss
+let contextLost = false
 renderer.domElement.addEventListener('webglcontextlost', (e) => {
   e.preventDefault()
+  contextLost = true
 })
 renderer.domElement.addEventListener('webglcontextrestored', () => {
+  contextLost = false
   renderer.setSize(window.innerWidth, window.innerHeight)
 })
 
@@ -62,6 +67,13 @@ const raycaster = new THREE.Raycaster()
 const mouse = new THREE.Vector2()
 let mouseDownPos = null
 let downloading = false
+let loadedTextureCount = 0
+
+// Placeholder material for mobile (dark gray rectangle)
+const placeholderMat = new THREE.MeshBasicMaterial({
+  color: 0x1a1a1a,
+  side: THREE.DoubleSide,
+})
 
 // Particle dust
 function createDust() {
@@ -83,29 +95,41 @@ function createDust() {
 }
 createDust()
 
-// Downscale image on mobile to reduce GPU memory
-const MOBILE_TEX_SIZE = 128
-function downscaleImage(img) {
-  if (!isMobile) return img
-  const canvas = document.createElement('canvas')
-  const aspect = img.width / img.height
-  if (aspect >= 1) {
-    canvas.width = MOBILE_TEX_SIZE
-    canvas.height = Math.round(MOBILE_TEX_SIZE / aspect)
-  } else {
-    canvas.height = MOBILE_TEX_SIZE
-    canvas.width = Math.round(MOBILE_TEX_SIZE * aspect)
-  }
-  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
-  return canvas
+// Create texture from base64 (with optional downscale for mobile)
+function createTexture(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      let source = img
+      if (isMobile) {
+        const canvas = document.createElement('canvas')
+        const aspect = img.width / img.height
+        const maxSize = 128
+        if (aspect >= 1) {
+          canvas.width = maxSize
+          canvas.height = Math.round(maxSize / aspect)
+        } else {
+          canvas.height = maxSize
+          canvas.width = Math.round(maxSize * aspect)
+        }
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        source = canvas
+      }
+      const texture = new THREE.Texture(source)
+      texture.needsUpdate = true
+      texture.colorSpace = THREE.SRGBColorSpace
+      resolve({ texture, aspect: img.width / img.height })
+    }
+    img.onerror = () => resolve(null)
+    img.src = dataUrl
+  })
 }
 
-// Add photo from base64 data URL
-function addPhoto(dataUrl, filename) {
+// Add photo — on desktop: load texture immediately; on mobile: placeholder
+function addPhotoDesktop(dataUrl, filename) {
   const img = new Image()
   img.onload = () => {
-    const source = downscaleImage(img)
-    const texture = new THREE.Texture(source)
+    const texture = new THREE.Texture(img)
     texture.needsUpdate = true
     texture.colorSpace = THREE.SRGBColorSpace
 
@@ -122,13 +146,11 @@ function addPhoto(dataUrl, filename) {
     })
 
     const mesh = new THREE.Mesh(geo, mat)
-
     mesh.position.set(
       (Math.random() - 0.5) * SPREAD,
       (Math.random() - 0.5) * SPREAD,
       (Math.random() - 0.5) * SPREAD
     )
-
     mesh.rotation.x = (Math.random() - 0.5) * 0.3
     mesh.rotation.y = (Math.random() - 0.5) * 0.3
     mesh.rotation.z = (Math.random() - 0.5) * 0.15
@@ -142,22 +164,123 @@ function addPhoto(dataUrl, filename) {
       glowIntensity: 0,
       hiRes: false,
       loadingHiRes: false,
+      thumbLoaded: true,
+      thumbDataUrl: null,
     })
   }
   img.src = dataUrl
 }
 
-// Load photos in batches to avoid GPU memory spike
+function addPhotoMobile(dataUrl, filename, aspect) {
+  // Parse aspect from the base64 image header or use default
+  const size = 25 + Math.random() * 10
+  const w = aspect >= 1 ? size : size * aspect
+  const h = aspect >= 1 ? size / aspect : size
+
+  const geo = new THREE.PlaneGeometry(w, h)
+  const mesh = new THREE.Mesh(geo, placeholderMat)
+
+  mesh.position.set(
+    (Math.random() - 0.5) * SPREAD,
+    (Math.random() - 0.5) * SPREAD,
+    (Math.random() - 0.5) * SPREAD
+  )
+  mesh.rotation.x = (Math.random() - 0.5) * 0.3
+  mesh.rotation.y = (Math.random() - 0.5) * 0.3
+  mesh.rotation.z = (Math.random() - 0.5) * 0.15
+
+  scene.add(mesh)
+  photoFilenames.set(mesh.uuid, filename)
+  photos.push({
+    mesh,
+    floatSpeed: 0.2 + Math.random() * 0.5,
+    floatOffset: Math.random() * Math.PI * 2,
+    glowIntensity: 0,
+    hiRes: false,
+    loadingHiRes: false,
+    thumbLoaded: false,
+    thumbDataUrl: dataUrl,
+    loadingThumb: false,
+  })
+}
+
+// Mobile: load thumb texture for a nearby photo
+function loadThumbForEntry(entry) {
+  if (entry.thumbLoaded || entry.loadingThumb || !entry.thumbDataUrl) return
+  if (loadedTextureCount >= MAX_MOBILE_TEXTURES) return
+  entry.loadingThumb = true
+
+  const img = new Image()
+  img.onload = () => {
+    if (contextLost) { entry.loadingThumb = false; return }
+    const canvas = document.createElement('canvas')
+    const aspect = img.width / img.height
+    const maxSize = 128
+    if (aspect >= 1) {
+      canvas.width = maxSize
+      canvas.height = Math.round(maxSize / aspect)
+    } else {
+      canvas.height = maxSize
+      canvas.width = Math.round(maxSize * aspect)
+    }
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+
+    const texture = new THREE.Texture(canvas)
+    texture.needsUpdate = true
+    texture.colorSpace = THREE.SRGBColorSpace
+
+    const mat = new THREE.MeshBasicMaterial({
+      map: texture,
+      side: THREE.DoubleSide,
+      transparent: true,
+    })
+    entry.mesh.material = mat
+    entry.thumbLoaded = true
+    entry.loadingThumb = false
+    entry.thumbDataUrl = null // free the base64 string
+    loadedTextureCount++
+  }
+  img.onerror = () => { entry.loadingThumb = false }
+  img.src = entry.thumbDataUrl
+}
+
+// Mobile: unload texture for a far photo to free GPU memory
+function unloadThumb(entry) {
+  if (!entry.thumbLoaded || entry.mesh.material === placeholderMat) return
+  entry.mesh.material.map.dispose()
+  entry.mesh.material.dispose()
+  entry.mesh.material = placeholderMat
+  entry.thumbLoaded = false
+  entry.hiRes = false
+  entry.loadingHiRes = false
+  loadedTextureCount--
+}
+
+// Precompute aspects from base64 for mobile placeholders
+function getAspectFromDataUrl(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(img.width / img.height)
+    img.onerror = () => resolve(1)
+    img.src = dataUrl
+  })
+}
+
+// Load all photos from manifest
 async function loadPhotos() {
   try {
     const res = await fetch(MANIFEST_URL)
     const manifest = await res.json()
-    const BATCH = isMobile ? 10 : 50
-    for (let i = 0; i < manifest.length; i += BATCH) {
-      const batch = manifest.slice(i, i + BATCH)
-      batch.forEach(({ name, thumb }) => addPhoto(thumb, name))
-      if (isMobile && i + BATCH < manifest.length) {
-        await new Promise((r) => setTimeout(r, 100))
+
+    if (!isMobile) {
+      manifest.forEach(({ name, thumb }) => addPhotoDesktop(thumb, name))
+    } else {
+      // On mobile: get aspects first, then create placeholders
+      const BATCH = 20
+      for (let i = 0; i < manifest.length; i += BATCH) {
+        const batch = manifest.slice(i, i + BATCH)
+        const aspects = await Promise.all(batch.map(({ thumb }) => getAspectFromDataUrl(thumb)))
+        batch.forEach(({ name, thumb }, j) => addPhotoMobile(thumb, name, aspects[j]))
       }
     }
   } catch (err) {
@@ -236,10 +359,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 })
 
-// LOD: upgrade texture when camera is close
+// LOD: upgrade texture when camera is close (desktop only)
 const LOD_DISTANCE = 60
 function upgradeToHiRes(entry) {
   if (entry.hiRes || entry.loadingHiRes) return
+  if (isMobile) return // skip hi-res on mobile
   entry.loadingHiRes = true
   const filename = photoFilenames.get(entry.mesh.uuid)
   if (!filename) return
@@ -261,19 +385,46 @@ function upgradeToHiRes(entry) {
 
 // Render loop
 const clock = new THREE.Clock()
+let mobileTexFrame = 0
 
 function animate() {
   requestAnimationFrame(animate)
+  if (contextLost) return
+
   const t = clock.getElapsedTime()
+
+  // Mobile texture management: every 30 frames, sort by distance and load/unload
+  if (isMobile) {
+    mobileTexFrame++
+    if (mobileTexFrame >= 30) {
+      mobileTexFrame = 0
+      const sorted = photos.map((entry) => ({
+        entry,
+        dist: camera.position.distanceTo(entry.mesh.position),
+      })).sort((a, b) => a.dist - b.dist)
+
+      // Load closest, unload farthest
+      for (let i = 0; i < sorted.length; i++) {
+        const { entry, dist } = sorted[i]
+        if (i < MAX_MOBILE_TEXTURES && dist < MOBILE_LOAD_DIST) {
+          loadThumbForEntry(entry)
+        } else if (entry.thumbLoaded && entry.mesh.material !== placeholderMat) {
+          unloadThumb(entry)
+        }
+      }
+    }
+  }
 
   photos.forEach((entry) => {
     const { mesh, floatSpeed, floatOffset } = entry
     mesh.position.y += Math.sin(t * floatSpeed + floatOffset) * 0.005
     mesh.rotation.y += 0.0003
 
-    // LOD check
-    const dist = camera.position.distanceTo(mesh.position)
-    if (dist < LOD_DISTANCE) upgradeToHiRes(entry)
+    // LOD check (desktop)
+    if (!isMobile) {
+      const dist = camera.position.distanceTo(mesh.position)
+      if (dist < LOD_DISTANCE) upgradeToHiRes(entry)
+    }
 
     if (entry.glowIntensity > 0) {
       entry.glowIntensity = Math.max(0, entry.glowIntensity - 0.018)
