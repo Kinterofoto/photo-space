@@ -10,6 +10,10 @@ function fullUrl(filename) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${filename}`
 }
 
+function hiResUrl(filename) {
+  return `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}/${filename}?width=1200&height=1200&resize=contain&quality=75`
+}
+
 // Scene
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x000000)
@@ -108,6 +112,8 @@ function addPhoto(dataUrl, filename) {
       floatSpeed: 0.2 + Math.random() * 0.5,
       floatOffset: Math.random() * Math.PI * 2,
       glowIntensity: 0,
+      hiRes: false,
+      loadingHiRes: false,
     })
   }
   img.src = dataUrl
@@ -196,6 +202,29 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 })
 
+// LOD: upgrade texture when camera is close
+const LOD_DISTANCE = 60
+function upgradeToHiRes(entry) {
+  if (entry.hiRes || entry.loadingHiRes) return
+  entry.loadingHiRes = true
+  const filename = photoFilenames.get(entry.mesh.uuid)
+  if (!filename) return
+
+  const img = new Image()
+  img.crossOrigin = 'anonymous'
+  img.onload = () => {
+    const texture = new THREE.Texture(img)
+    texture.needsUpdate = true
+    texture.colorSpace = THREE.SRGBColorSpace
+    entry.mesh.material.map.dispose()
+    entry.mesh.material.map = texture
+    entry.mesh.material.needsUpdate = true
+    entry.hiRes = true
+  }
+  img.onerror = () => { entry.loadingHiRes = false }
+  img.src = hiResUrl(filename)
+}
+
 // Render loop
 const clock = new THREE.Clock()
 
@@ -207,6 +236,10 @@ function animate() {
     const { mesh, floatSpeed, floatOffset } = entry
     mesh.position.y += Math.sin(t * floatSpeed + floatOffset) * 0.005
     mesh.rotation.y += 0.0003
+
+    // LOD check
+    const dist = camera.position.distanceTo(mesh.position)
+    if (dist < LOD_DISTANCE) upgradeToHiRes(entry)
 
     if (entry.glowIntensity > 0) {
       entry.glowIntensity = Math.max(0, entry.glowIntensity - 0.018)
