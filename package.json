@@ -14,6 +14,7 @@
     "populate-photos": "bun run scripts/populate-photos.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.600.0",
     "@neondatabase/serverless": "^1.0.2",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-slot": "^1.2.4",
@@ -21,7 +22,6 @@
     "@react-three/fiber": "^9",
     "@supabase/supabase-js": "^2.95.3",
     "@tanstack/react-query": "^5.90.20",
-    "@aws-sdk/client-rekognition": "^3.600.0",
     "@tensorflow/tfjs-node": "^4.22.0",
     "@vladmandic/human": "^3.3.6",
     "canvas": "^3.2.1",
@@ -30,6 +30,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.1",
     "lucide-react": "^0.469.0",
+    "motion": "^12.34.0",
     "next": "15",
     "next-cloudinary": "^6.17.5",
     "react": "^19",
