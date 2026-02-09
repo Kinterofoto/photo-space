@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useManifest } from "@/hooks/use-manifest"
 import { useQuery } from "@tanstack/react-query"
 import { PhotoViewer } from "./photo-viewer"
@@ -15,7 +15,7 @@ export function MobileGallery() {
   const { photos, loading } = useManifest()
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set())
-  const observerRef = useRef<IntersectionObserver | null>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
 
   // Face filtering
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
@@ -44,39 +44,31 @@ export function MobileGallery() {
     return photos.filter((p) => nameSet.has(p.name))
   }, [photos, selectedPersonId, personPhotoNames])
 
-  // Intersection observer for staggered fade-in
-  const itemRef = useCallback((node: HTMLElement | null) => {
-    if (!node) return
-    if (!observerRef.current) {
-      observerRef.current = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              const index = Number(
-                (entry.target as HTMLElement).dataset.index
-              )
-              setVisibleItems((prev) => new Set(prev).add(index))
-              observerRef.current?.unobserve(entry.target)
-            }
-          })
-        },
-        { rootMargin: "50px", threshold: 0.1 }
-      )
-    }
-    observerRef.current.observe(node)
-  }, [])
-
-  // Cleanup observer
-  useEffect(() => {
-    return () => observerRef.current?.disconnect()
-  }, [])
-
-  // Reset visible items when filter changes
+  // Observe photo items for staggered fade-in; re-run when filter changes
   useEffect(() => {
     setVisibleItems(new Set())
-    observerRef.current?.disconnect()
-    observerRef.current = null
-  }, [selectedPersonId])
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const index = Number(
+              (entry.target as HTMLElement).dataset.index
+            )
+            setVisibleItems((prev) => new Set(prev).add(index))
+            observer.unobserve(entry.target)
+          }
+        })
+      },
+      { rootMargin: "50px", threshold: 0.1 }
+    )
+
+    gridRef.current?.querySelectorAll<HTMLElement>("[data-index]").forEach(
+      (el) => observer.observe(el)
+    )
+
+    return () => observer.disconnect()
+  }, [filteredPhotos])
 
   // Lock body scroll when viewer is open
   useEffect(() => {
@@ -135,11 +127,10 @@ export function MobileGallery() {
       </header>
 
       {/* Photo Grid */}
-      <div className="columns-2 gap-[5px] p-[5px]">
+      <div ref={gridRef} className="columns-2 gap-[5px] p-[5px]">
         {filteredPhotos.map((photo, index) => (
           <button
             key={photo.name}
-            ref={itemRef}
             data-index={index}
             className={cn(
               "mb-[5px] block w-full break-inside-avoid overflow-hidden rounded-[10px] transition-all duration-500",
