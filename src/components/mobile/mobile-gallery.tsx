@@ -39,7 +39,8 @@ export function MobileGallery() {
 
   // Filter photos by person
   const filteredPhotos = useMemo(() => {
-    if (!selectedPersonId || !personPhotoNames) return photos
+    if (!selectedPersonId) return photos
+    if (!personPhotoNames) return []
     const nameSet = new Set(personPhotoNames)
     return photos.filter((p) => nameSet.has(p.name))
   }, [photos, selectedPersonId, personPhotoNames])
