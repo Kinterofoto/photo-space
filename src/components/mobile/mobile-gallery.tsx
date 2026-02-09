@@ -20,7 +20,7 @@ export function MobileGallery() {
   // Face filtering
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const [namingPerson, setNamingPerson] = useState<PersonWithFace | null>(null)
-  const [showLandmarks, setShowLandmarks] = useState(false)
+  const [showLandmarks, setShowLandmarks] = useState(true)
 
   const namePerson = useNamePerson()
 
@@ -103,10 +103,10 @@ export function MobileGallery() {
             <button
               onClick={() => setShowLandmarks((v) => !v)}
               className={cn(
-                "rounded-full p-1.5 font-mono text-[9px] uppercase tracking-wider transition-colors",
+                "rounded-full border p-1.5 transition-all",
                 showLandmarks
-                  ? "bg-white/10 text-white/50"
-                  : "text-white/20 active:bg-white/5"
+                  ? "border-white/20 bg-white/15 text-white/70"
+                  : "border-white/[0.06] text-white/25 active:bg-white/5"
               )}
               title="Toggle face scan overlay"
             >
@@ -115,7 +115,7 @@ export function MobileGallery() {
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.5"
-                className="h-4 w-4"
+                className="h-5 w-5"
               >
                 <path d="M2 7V2h5M17 2h5v5M2 17v5h5M17 22h5v-5" />
                 <circle cx="12" cy="10" r="3" />

@@ -1,7 +1,7 @@
 "use client"
 
 import { Canvas } from "@react-three/fiber"
-import { Suspense, useMemo, useCallback, useRef, useState } from "react"
+import { Suspense, useMemo, useCallback, useRef, useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { PhotoCard } from "./photo-card"
@@ -23,8 +23,16 @@ export function PhotoSpace() {
   const isDragging = useRef(false)
   const pointerDownPos = useRef({ x: 0, y: 0 })
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<ViewMode>("3d")
-  const [showLandmarks, setShowLandmarks] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "3d"
+    return (localStorage.getItem("photo-space-view") as ViewMode) || "3d"
+  })
+  const [showLandmarks, setShowLandmarks] = useState(true)
+
+  // Persist view mode
+  useEffect(() => {
+    localStorage.setItem("photo-space-view", viewMode)
+  }, [viewMode])
 
   // Fetch photo names for selected person
   const { data: personPhotoNames } = useQuery({
@@ -162,8 +170,8 @@ export function PhotoSpace() {
             className={cn(
               "rounded-full border p-2 transition-all",
               showLandmarks
-                ? "border-white/15 bg-white/10 text-white/50"
-                : "border-white/[0.06] bg-black/50 text-white/20 hover:text-white/40 backdrop-blur-xl"
+                ? "border-white/20 bg-white/15 text-white/70"
+                : "border-white/[0.06] bg-black/50 text-white/25 hover:text-white/40 backdrop-blur-xl"
             )}
             title="Toggle face scan overlay"
           >
