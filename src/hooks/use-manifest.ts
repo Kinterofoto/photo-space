@@ -11,14 +11,14 @@ export function useManifest() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/manifest.json")
+        const res = await fetch("/api/photos")
         const data: ManifestPhoto[] = await res.json()
         setPhotos(data)
       } catch (err) {
         setError(
-          err instanceof Error ? err : new Error("Failed to load manifest")
+          err instanceof Error ? err : new Error("Failed to load photos")
         )
-        console.error("Failed to load manifest:", err)
+        console.error("Failed to load photos:", err)
       } finally {
         setLoading(false)
       }

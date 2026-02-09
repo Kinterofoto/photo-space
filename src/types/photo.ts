@@ -1,6 +1,10 @@
 export interface ManifestPhoto {
+  id: string
   name: string
-  thumb: string
+  url: string
+  thumbUrl: string
+  width: number | null
+  height: number | null
 }
 
 export interface ProcessedPhoto extends ManifestPhoto {
