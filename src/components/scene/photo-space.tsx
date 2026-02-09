@@ -45,7 +45,6 @@ export function PhotoSpace() {
       return res.json() as Promise<string[]>
     },
     enabled: !!selectedPersonId,
-    retry: 2,
   })
 
   const highlightedSet = useMemo(() => {

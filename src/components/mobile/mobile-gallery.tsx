@@ -35,7 +35,6 @@ export function MobileGallery() {
       return res.json() as Promise<string[]>
     },
     enabled: !!selectedPersonId,
-    retry: 2,
   })
 
   // Filter photos by person
