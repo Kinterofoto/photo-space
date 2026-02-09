@@ -75,7 +75,7 @@ export function PhotoSpace() {
 
   return (
     <div
-      className="h-screen w-screen bg-black"
+      className="h-screen w-screen overflow-hidden bg-black"
       onPointerDown={(e) => {
         pointerDownPos.current = { x: e.clientX, y: e.clientY }
         isDragging.current = false

@@ -5,43 +5,51 @@ import { useManifest } from "@/hooks/use-manifest"
 import { PhotoViewer } from "./photo-viewer"
 import { GithubBadge } from "@/components/github-badge"
 import { cn } from "@/lib/utils"
-import type { ManifestPhoto } from "@/types/photo"
 
 export function MobileGallery() {
   const { photos, loading } = useManifest()
-  const [selectedPhoto, setSelectedPhoto] = useState<ManifestPhoto | null>(null)
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set())
   const observerRef = useRef<IntersectionObserver | null>(null)
 
   // Intersection observer for staggered fade-in
-  const itemRef = useCallback(
-    (node: HTMLElement | null) => {
-      if (!node) return
-      if (!observerRef.current) {
-        observerRef.current = new IntersectionObserver(
-          (entries) => {
-            entries.forEach((entry) => {
-              if (entry.isIntersecting) {
-                const index = Number(
-                  (entry.target as HTMLElement).dataset.index
-                )
-                setVisibleItems((prev) => new Set(prev).add(index))
-                observerRef.current?.unobserve(entry.target)
-              }
-            })
-          },
-          { rootMargin: "50px", threshold: 0.1 }
-        )
-      }
-      observerRef.current.observe(node)
-    },
-    []
-  )
+  const itemRef = useCallback((node: HTMLElement | null) => {
+    if (!node) return
+    if (!observerRef.current) {
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              const index = Number(
+                (entry.target as HTMLElement).dataset.index
+              )
+              setVisibleItems((prev) => new Set(prev).add(index))
+              observerRef.current?.unobserve(entry.target)
+            }
+          })
+        },
+        { rootMargin: "50px", threshold: 0.1 }
+      )
+    }
+    observerRef.current.observe(node)
+  }, [])
 
   // Cleanup observer
   useEffect(() => {
     return () => observerRef.current?.disconnect()
   }, [])
+
+  // Lock body scroll when viewer is open
+  useEffect(() => {
+    if (selectedIndex !== null) {
+      document.body.style.overflow = "hidden"
+    } else {
+      document.body.style.overflow = ""
+    }
+    return () => {
+      document.body.style.overflow = ""
+    }
+  }, [selectedIndex])
 
   return (
     <div className="min-h-screen bg-black">
@@ -74,7 +82,7 @@ export function MobileGallery() {
                 ? `${(index % 6) * 60}ms`
                 : "0ms",
             }}
-            onClick={() => setSelectedPhoto(photo)}
+            onClick={() => setSelectedIndex(index)}
           >
             <img
               src={photo.thumb}
@@ -104,8 +112,10 @@ export function MobileGallery() {
 
       {/* Photo Viewer */}
       <PhotoViewer
-        photo={selectedPhoto}
-        onClose={() => setSelectedPhoto(null)}
+        photos={photos}
+        currentIndex={selectedIndex}
+        onClose={() => setSelectedIndex(null)}
+        onNavigate={setSelectedIndex}
       />
     </div>
   )
