@@ -46,8 +46,6 @@ export function MobileGallery() {
 
   // Observe photo items for staggered fade-in; re-run when filter changes
   useEffect(() => {
-    setVisibleItems(new Set())
-
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
