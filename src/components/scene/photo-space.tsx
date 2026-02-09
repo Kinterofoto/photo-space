@@ -48,7 +48,8 @@ export function PhotoSpace() {
   })
 
   const highlightedSet = useMemo(() => {
-    if (!selectedPersonId || !personPhotoNames) return null
+    if (!selectedPersonId) return null
+    if (!personPhotoNames) return new Set<string>()
     return new Set(personPhotoNames)
   }, [selectedPersonId, personPhotoNames])
 
