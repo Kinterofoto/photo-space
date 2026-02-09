@@ -61,6 +61,11 @@ function GridPhoto({
         src={photo.thumbUrl}
         alt=""
         className="w-full transition-transform duration-300 group-hover:scale-[1.02]"
+        style={
+          photo.width && photo.height
+            ? { aspectRatio: `${photo.width}/${photo.height}` }
+            : undefined
+        }
         draggable={false}
       />
       {/* Hover overlay */}

@@ -35,6 +35,7 @@ export function MobileGallery() {
       return res.json() as Promise<string[]>
     },
     enabled: !!selectedPersonId,
+    retry: 2,
   })
 
   // Filter photos by person
@@ -159,6 +160,11 @@ export function MobileGallery() {
               src={photo.thumbUrl}
               alt=""
               className="w-full"
+              style={
+                photo.width && photo.height
+                  ? { aspectRatio: `${photo.width}/${photo.height}` }
+                  : undefined
+              }
               draggable={false}
             />
           </button>
