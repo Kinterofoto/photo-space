@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Download, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { SUPABASE_URL, BUCKET } from "@/lib/constants"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { useFaces } from "@/hooks/use-faces"
+import { FaceOverlay } from "./face-overlay"
 import type { ManifestPhoto } from "@/types/photo"
 
 interface PhotoViewerProps {
@@ -13,6 +14,7 @@ interface PhotoViewerProps {
   currentIndex: number | null
   onClose: () => void
   onNavigate: (index: number) => void
+  showLandmarks?: boolean
 }
 
 const SWIPE_THRESHOLD = 60
@@ -22,6 +24,7 @@ export function PhotoViewer({
   currentIndex,
   onClose,
   onNavigate,
+  showLandmarks = false,
 }: PhotoViewerProps) {
   const [isVisible, setIsVisible] = useState(false)
   const [hiResSrc, setHiResSrc] = useState<string | null>(null)
@@ -37,6 +40,9 @@ export function PhotoViewer({
   const hasPrev = currentIndex !== null && currentIndex > 0
   const hasNext = currentIndex !== null && currentIndex < photos.length - 1
 
+  // Fetch faces for current photo
+  const { data: faces } = useFaces(photo?.name ?? null)
+
   // Animate in when photo changes
   useEffect(() => {
     if (photo) {
@@ -48,11 +54,10 @@ export function PhotoViewer({
         requestAnimationFrame(() => setIsVisible(true))
       })
 
-      // Load hi-res
-      const src = `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}/${photo.name}?width=1200&height=1200&resize=contain&quality=75`
+      // Load hi-res from stored URL
       const img = new Image()
-      img.onload = () => setHiResSrc(src)
-      img.src = src
+      img.onload = () => setHiResSrc(photo.url)
+      img.src = photo.url
     }
   }, [photo])
 
@@ -110,8 +115,7 @@ export function PhotoViewer({
     setDownloading(true)
 
     try {
-      const url = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${photo.name}`
-      const res = await fetch(url)
+      const res = await fetch(photo.url)
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement("a")
@@ -130,10 +134,7 @@ export function PhotoViewer({
         },
       })
     } catch {
-      window.open(
-        `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${photo.name}`,
-        "_blank"
-      )
+      window.open(photo.url, "_blank")
     } finally {
       setDownloading(false)
     }
@@ -206,22 +207,29 @@ export function PhotoViewer({
           </button>
         )}
 
-        <img
-          src={hiResSrc || photo.thumb}
-          alt=""
-          className={cn(
-            "max-h-full max-w-full object-contain",
-            isVisible ? "scale-100 opacity-100" : "scale-95 opacity-0",
-            !swiping && "transition-all duration-250"
+        <div className="relative max-h-full max-w-full">
+          <img
+            src={hiResSrc || photo.thumbUrl}
+            alt=""
+            className={cn(
+              "max-h-full max-w-full object-contain",
+              isVisible ? "scale-100 opacity-100" : "scale-95 opacity-0",
+              !swiping && "transition-all duration-250"
+            )}
+            style={{
+              transform: `translateX(${dragX}px) scale(${isVisible ? 1 : 0.95})`,
+              opacity: isVisible
+                ? 1 - Math.min(Math.abs(dragX) / 400, 0.4)
+                : 0,
+            }}
+            draggable={false}
+          />
+
+          {/* Face overlay */}
+          {faces && faces.length > 0 && (
+            <FaceOverlay faces={faces} visible={showLandmarks} />
           )}
-          style={{
-            transform: `translateX(${dragX}px) scale(${isVisible ? 1 : 0.95})`,
-            opacity: isVisible
-              ? 1 - Math.min(Math.abs(dragX) / 400, 0.4)
-              : 0,
-          }}
-          draggable={false}
-        />
+        </div>
       </div>
 
       {/* Bottom bar — big download button */}

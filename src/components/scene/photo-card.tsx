@@ -3,16 +3,17 @@
 import { useRef, useState, useCallback, useEffect } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
-import { LOD_DISTANCE, SUPABASE_URL, BUCKET } from "@/lib/constants"
+import { LOD_DISTANCE } from "@/lib/constants"
 import type { ProcessedPhoto } from "@/types/photo"
 
 interface PhotoCardProps {
   photo: ProcessedPhoto
   onDownload: (filename: string) => void
   isDragging: React.RefObject<boolean>
+  dimmed?: boolean
 }
 
-export function PhotoCard({ photo, onDownload, isDragging }: PhotoCardProps) {
+export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: PhotoCardProps) {
   const meshRef = useRef<THREE.Mesh>(null)
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
   const [dims, setDims] = useState<{ width: number; height: number } | null>(
@@ -21,10 +22,12 @@ export function PhotoCard({ photo, onDownload, isDragging }: PhotoCardProps) {
   const [hiRes, setHiRes] = useState(false)
   const [loadingHiRes, setLoadingHiRes] = useState(false)
   const glowRef = useRef(0)
+  const currentOpacity = useRef(1)
 
-  // Load initial thumbnail texture from base64
+  // Load initial thumbnail texture
   useEffect(() => {
     const img = new Image()
+    img.crossOrigin = "anonymous"
     img.onload = () => {
       const tex = new THREE.Texture(img)
       tex.needsUpdate = true
@@ -37,8 +40,8 @@ export function PhotoCard({ photo, onDownload, isDragging }: PhotoCardProps) {
       setTexture(tex)
       setDims({ width, height })
     }
-    img.src = photo.thumb
-  }, [photo.thumb, photo.size])
+    img.src = photo.thumbUrl
+  }, [photo.thumbUrl, photo.size])
 
   // LOD: upgrade to hi-res when camera is close
   const upgradeToHiRes = useCallback(() => {
@@ -58,8 +61,8 @@ export function PhotoCard({ photo, onDownload, isDragging }: PhotoCardProps) {
       setHiRes(true)
     }
     img.onerror = () => setLoadingHiRes(false)
-    img.src = `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}/${photo.name}?width=1200&height=1200&resize=contain&quality=75`
-  }, [hiRes, loadingHiRes, photo.name])
+    img.src = photo.url
+  }, [hiRes, loadingHiRes, photo.url])
 
   // Animation loop
   useFrame((state) => {
@@ -77,12 +80,17 @@ export function PhotoCard({ photo, onDownload, isDragging }: PhotoCardProps) {
     const dist = state.camera.position.distanceTo(mesh.position)
     if (dist < LOD_DISTANCE) upgradeToHiRes()
 
+    // Smooth dimming when filtered
+    const targetOpacity = dimmed ? 0.08 : 1
+    currentOpacity.current += (targetOpacity - currentOpacity.current) * 0.05
+    const mat = mesh.material as THREE.MeshBasicMaterial
+    mat.opacity = currentOpacity.current
+
     // Glow effect (after download click)
     if (glowRef.current > 0) {
       glowRef.current = Math.max(0, glowRef.current - 0.018)
       const g = glowRef.current
       const boost = 1 + g * 1.5
-      const mat = mesh.material as THREE.MeshBasicMaterial
       mat.color.setRGB(boost, boost, boost)
       mesh.scale.setScalar(1 + g * 0.06)
     }
