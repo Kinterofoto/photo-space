@@ -29,5 +29,7 @@ export async function GET(request: NextRequest) {
     .leftJoin(persons, eq(faces.personId, persons.id))
     .where(eq(faces.photoName, photoName))
 
-  return NextResponse.json(result)
+  return NextResponse.json(result, {
+    headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
+  })
 }

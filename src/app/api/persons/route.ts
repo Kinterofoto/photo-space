@@ -30,5 +30,7 @@ export async function GET() {
     })
   )
 
-  return NextResponse.json(personsWithFaces)
+  return NextResponse.json(personsWithFaces, {
+    headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
+  })
 }

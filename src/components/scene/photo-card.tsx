@@ -4,7 +4,32 @@ import { useRef, useState, useCallback, useEffect } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import { LOD_DISTANCE } from "@/lib/constants"
+import { getOptimizedUrl } from "@/lib/cloudinary"
 import type { ProcessedPhoto } from "@/types/photo"
+
+// Global concurrency semaphore: max 3 hi-res loads at once
+let activeLoads = 0
+const MAX_CONCURRENT_LOADS = 3
+const loadQueue: Array<() => void> = []
+
+function acquireSlot(): Promise<void> {
+  if (activeLoads < MAX_CONCURRENT_LOADS) {
+    activeLoads++
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    loadQueue.push(() => {
+      activeLoads++
+      resolve()
+    })
+  })
+}
+
+function releaseSlot() {
+  activeLoads--
+  const next = loadQueue.shift()
+  if (next) next()
+}
 
 interface PhotoCardProps {
   photo: ProcessedPhoto
@@ -23,6 +48,7 @@ export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: Pho
   const [loadingHiRes, setLoadingHiRes] = useState(false)
   const glowRef = useRef(0)
   const currentOpacity = useRef(1)
+  const frameCount = useRef(0)
 
   // Load initial thumbnail texture
   useEffect(() => {
@@ -48,20 +74,28 @@ export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: Pho
     if (hiRes || loadingHiRes) return
     setLoadingHiRes(true)
 
-    const img = new Image()
-    img.crossOrigin = "anonymous"
-    img.onload = () => {
-      const tex = new THREE.Texture(img)
-      tex.needsUpdate = true
-      tex.colorSpace = THREE.SRGBColorSpace
-      setTexture((prev) => {
-        prev?.dispose()
-        return tex
-      })
-      setHiRes(true)
-    }
-    img.onerror = () => setLoadingHiRes(false)
-    img.src = photo.url
+    const optimizedUrl = getOptimizedUrl(photo.url)
+
+    acquireSlot().then(() => {
+      const img = new Image()
+      img.crossOrigin = "anonymous"
+      img.onload = () => {
+        const tex = new THREE.Texture(img)
+        tex.needsUpdate = true
+        tex.colorSpace = THREE.SRGBColorSpace
+        setTexture((prev) => {
+          prev?.dispose()
+          return tex
+        })
+        setHiRes(true)
+        releaseSlot()
+      }
+      img.onerror = () => {
+        setLoadingHiRes(false)
+        releaseSlot()
+      }
+      img.src = optimizedUrl
+    })
   }, [hiRes, loadingHiRes, photo.url])
 
   // Animation loop
@@ -76,9 +110,12 @@ export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: Pho
       Math.sin(t * photo.floatSpeed + photo.floatOffset) * 0.005
     mesh.rotation.y += 0.0003
 
-    // LOD check
-    const dist = state.camera.position.distanceTo(mesh.position)
-    if (dist < LOD_DISTANCE) upgradeToHiRes()
+    // LOD check — throttled to every 10 frames
+    frameCount.current++
+    if (frameCount.current % 10 === 0) {
+      const dist = state.camera.position.distanceTo(mesh.position)
+      if (dist < LOD_DISTANCE) upgradeToHiRes()
+    }
 
     // Smooth dimming when filtered
     const targetOpacity = dimmed ? 0.08 : 1
