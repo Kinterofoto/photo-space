@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { Download } from "lucide-react"
 import { useFaces } from "@/hooks/use-faces"
 import { FaceOverlay } from "@/components/mobile/face-overlay"
+import { useParticleDissolve } from "@/components/effects/particle-dissolve"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import type { ManifestPhoto } from "@/types/photo"
@@ -90,6 +91,8 @@ function Lightbox({
   const photo = photos[index]
   const [hiRes, setHiRes] = useState<string | null>(null)
   const { data: faces } = useFaces(photo.name)
+  const imgRef = useRef<HTMLImageElement>(null)
+  const { trigger: triggerDissolve, canvasRef, isDissolving } = useParticleDissolve()
 
   useEffect(() => {
     setHiRes(null)
@@ -109,6 +112,7 @@ function Lightbox({
   }, [index, photos.length, onClose, onNavigate])
 
   const handleDownload = useCallback(async () => {
+    if (imgRef.current) triggerDissolve(imgRef.current)
     try {
       const res = await fetch(photo.url)
       const blob = await res.blob()
@@ -132,7 +136,7 @@ function Lightbox({
     } catch {
       window.open(photo.url, "_blank")
     }
-  }, [photo.url, photo.name])
+  }, [photo.url, photo.name, triggerDissolve])
 
   return (
     <div
@@ -182,11 +186,14 @@ function Lightbox({
       {/* Photo */}
       <div className="relative max-h-[85vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
         <img
+          ref={imgRef}
           src={hiRes || photo.thumbUrl}
           alt=""
           className="max-h-[85vh] max-w-[90vw] object-contain"
+          crossOrigin="anonymous"
           draggable={false}
         />
+        <canvas ref={canvasRef} className="pointer-events-none" />
         {faces && faces.length > 0 && (
           <FaceOverlay faces={faces} visible={showLandmarks} />
         )}
