@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
       .from(faces)
       .where(eq(faces.personId, personId))
 
-    return NextResponse.json(result.map((r) => r.photoName))
+    return NextResponse.json(result.map((r) => r.photoName), {
+      headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
+    })
   }
 
   // Default: return all photos
@@ -29,5 +31,7 @@ export async function GET(request: NextRequest) {
     .from(photos)
     .orderBy(asc(photos.name))
 
-  return NextResponse.json(allPhotos)
+  return NextResponse.json(allPhotos, {
+    headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
+  })
 }
