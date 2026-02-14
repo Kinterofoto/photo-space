@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useFaces } from "@/hooks/use-faces"
+import { useParticleDissolve } from "@/components/effects/particle-dissolve"
 import { FaceOverlay } from "./face-overlay"
 import type { ManifestPhoto } from "@/types/photo"
 
@@ -30,6 +31,22 @@ export function PhotoViewer({
   const [hiResSrc, setHiResSrc] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
   const closingRef = useRef(false)
+
+  // Particle dissolve
+  const imgRef = useRef<HTMLImageElement>(null)
+  const handleDissolveComplete = useCallback(() => {
+    // Auto-advance to next photo, or close viewer
+    if (currentIndex !== null) {
+      if (currentIndex < photos.length - 1) {
+        onNavigate(currentIndex + 1)
+      } else if (currentIndex > 0) {
+        onNavigate(currentIndex - 1)
+      } else {
+        onClose()
+      }
+    }
+  }, [currentIndex, photos.length, onNavigate, onClose])
+  const { trigger: triggerDissolve, canvasRef, isDissolving } = useParticleDissolve(handleDissolveComplete)
 
   // Swipe state
   const touchStart = useRef({ x: 0, y: 0 })
@@ -113,6 +130,7 @@ export function PhotoViewer({
   const handleDownload = useCallback(async () => {
     if (!photo || downloading) return
     setDownloading(true)
+    if (imgRef.current) triggerDissolve(imgRef.current)
 
     try {
       const res = await fetch(photo.url)
@@ -138,7 +156,7 @@ export function PhotoViewer({
     } finally {
       setDownloading(false)
     }
-  }, [photo, downloading])
+  }, [photo, downloading, triggerDissolve])
 
   if (!photo || currentIndex === null) return null
 
@@ -209,6 +227,7 @@ export function PhotoViewer({
 
         <div className="relative max-h-full max-w-full">
           <img
+            ref={imgRef}
             src={hiResSrc || photo.thumbUrl}
             alt=""
             className={cn(
@@ -222,8 +241,10 @@ export function PhotoViewer({
                 ? 1 - Math.min(Math.abs(dragX) / 400, 0.4)
                 : 0,
             }}
+            crossOrigin="anonymous"
             draggable={false}
           />
+          <canvas ref={canvasRef} className="pointer-events-none" />
 
           {/* Face overlay */}
           {faces && faces.length > 0 && (
