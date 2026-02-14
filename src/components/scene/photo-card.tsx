@@ -51,6 +51,7 @@ export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: Pho
   const [hiRes, setHiRes] = useState(false)
   const [loadingHiRes, setLoadingHiRes] = useState(false)
   const [dissolving, setDissolving] = useState(false)
+  const [hidden, setHidden] = useState(false)
   const dissolveStartTime = useRef(0)
   const currentOpacity = useRef(1)
   const frameCount = useRef(0)
@@ -275,16 +276,15 @@ export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: Pho
         points.rotation.copy(mesh.rotation)
       }
 
-      // End dissolve
+      // End dissolve — hide permanently
       if (progress >= 1) {
         setDissolving(false)
         dissolveGeo.current?.dispose()
         dissolveMat.current?.dispose()
         dissolveGeo.current = null
         dissolveMat.current = null
-        // Restore mesh opacity
-        const mat = mesh.material as THREE.MeshBasicMaterial
-        mat.opacity = currentOpacity.current
+        texture?.dispose()
+        setHidden(true)
       }
     } else {
       const mat = mesh.material as THREE.MeshBasicMaterial
@@ -299,7 +299,7 @@ export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: Pho
     onDownload(photo.name)
   }, [photo.name, onDownload, isDragging, startDissolve])
 
-  if (!texture || !dims) return null
+  if (hidden || !texture || !dims) return null
 
   return (
     <>

@@ -34,7 +34,19 @@ export function PhotoViewer({
 
   // Particle dissolve
   const imgRef = useRef<HTMLImageElement>(null)
-  const { trigger: triggerDissolve, canvasRef, isDissolving } = useParticleDissolve()
+  const handleDissolveComplete = useCallback(() => {
+    // Auto-advance to next photo, or close viewer
+    if (currentIndex !== null) {
+      if (currentIndex < photos.length - 1) {
+        onNavigate(currentIndex + 1)
+      } else if (currentIndex > 0) {
+        onNavigate(currentIndex - 1)
+      } else {
+        onClose()
+      }
+    }
+  }, [currentIndex, photos.length, onNavigate, onClose])
+  const { trigger: triggerDissolve, canvasRef, isDissolving } = useParticleDissolve(handleDissolveComplete)
 
   // Swipe state
   const touchStart = useRef({ x: 0, y: 0 })

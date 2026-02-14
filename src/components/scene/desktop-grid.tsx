@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Download } from "lucide-react"
 import { useFaces } from "@/hooks/use-faces"
 import { FaceOverlay } from "@/components/mobile/face-overlay"
@@ -81,18 +81,33 @@ function Lightbox({
   showLandmarks,
   onClose,
   onNavigate,
+  onPhotoHidden,
 }: {
   photos: ManifestPhoto[]
   index: number
   showLandmarks: boolean
   onClose: () => void
   onNavigate: (i: number) => void
+  onPhotoHidden: (name: string) => void
 }) {
   const photo = photos[index]
   const [hiRes, setHiRes] = useState<string | null>(null)
   const { data: faces } = useFaces(photo.name)
   const imgRef = useRef<HTMLImageElement>(null)
-  const { trigger: triggerDissolve, canvasRef, isDissolving } = useParticleDissolve()
+
+  const handleDissolveComplete = useCallback(() => {
+    onPhotoHidden(photo.name)
+    // Auto-advance to next visible photo, or close
+    if (index < photos.length - 1) {
+      onNavigate(index + 1)
+    } else if (index > 0) {
+      onNavigate(index - 1)
+    } else {
+      onClose()
+    }
+  }, [photo.name, index, photos.length, onPhotoHidden, onNavigate, onClose])
+
+  const { trigger: triggerDissolve, canvasRef, isDissolving } = useParticleDissolve(handleDissolveComplete)
 
   useEffect(() => {
     setHiRes(null)
@@ -209,11 +224,21 @@ function Lightbox({
 
 export function DesktopGrid({ photos, showLandmarks }: DesktopGridProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [hiddenPhotos, setHiddenPhotos] = useState<Set<string>>(new Set())
+
+  const visiblePhotos = useMemo(
+    () => photos.filter((p) => !hiddenPhotos.has(p.name)),
+    [photos, hiddenPhotos]
+  )
+
+  const handlePhotoHidden = useCallback((name: string) => {
+    setHiddenPhotos((prev) => new Set(prev).add(name))
+  }, [])
 
   return (
     <>
       <div className="columns-3 gap-2 p-2 xl:columns-4 2xl:columns-5">
-        {photos.map((photo, i) => (
+        {visiblePhotos.map((photo, i) => (
           <div key={photo.name} className="mb-2">
             <GridPhoto
               photo={photo}
@@ -225,13 +250,14 @@ export function DesktopGrid({ photos, showLandmarks }: DesktopGridProps) {
         ))}
       </div>
 
-      {lightboxIndex !== null && (
+      {lightboxIndex !== null && lightboxIndex < visiblePhotos.length && (
         <Lightbox
-          photos={photos}
+          photos={visiblePhotos}
           index={lightboxIndex}
           showLandmarks={showLandmarks}
           onClose={() => setLightboxIndex(null)}
           onNavigate={setLightboxIndex}
+          onPhotoHidden={handlePhotoHidden}
         />
       )}
     </>

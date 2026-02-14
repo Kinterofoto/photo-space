@@ -23,11 +23,13 @@ interface Particle {
 const PARTICLE_GRID = 55 // ~55x55 = ~3000 particles
 const DURATION = 2500
 
-export function useParticleDissolve() {
+export function useParticleDissolve(onComplete?: () => void) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDissolving, setIsDissolving] = useState(false)
   const animRef = useRef<number>(0)
   const imgElRef = useRef<HTMLImageElement | null>(null)
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
 
   const trigger = useCallback((imgEl: HTMLImageElement) => {
     if (isDissolving) return
@@ -146,13 +148,9 @@ export function useParticleDissolve() {
       if (progress < 1) {
         animRef.current = requestAnimationFrame(animate)
       } else {
-        // Restore
         ctx.clearRect(0, 0, canvas.width, canvas.height)
-        if (imgElRef.current) {
-          imgElRef.current.style.transition = "opacity 0.3s ease-in"
-          imgElRef.current.style.opacity = "1"
-        }
         setIsDissolving(false)
+        onCompleteRef.current?.()
       }
     }
 
