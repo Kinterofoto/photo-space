@@ -5,6 +5,7 @@ import { Download } from "lucide-react"
 import { useFaces } from "@/hooks/use-faces"
 import { FaceOverlay } from "@/components/mobile/face-overlay"
 import { useParticleDissolve } from "@/components/effects/particle-dissolve"
+import { Generate3DButton } from "@/components/generate-3d-button"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import type { ManifestPhoto } from "@/types/photo"
@@ -182,6 +183,7 @@ function Lightbox({
           {index + 1} / {photos.length}
         </span>
         <div className="flex items-center gap-2">
+          <Generate3DButton photoName={photo.name} size="sm" />
           <button
             onClick={(e) => { e.stopPropagation(); handleDownload() }}
             className="flex h-8 items-center gap-1.5 rounded-full bg-white/5 px-3 font-mono text-[10px] lowercase tracking-wider text-white/40 transition-colors hover:bg-white/10 hover:text-white/60"

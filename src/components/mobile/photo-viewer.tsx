@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useFaces } from "@/hooks/use-faces"
 import { useParticleDissolve } from "@/components/effects/particle-dissolve"
+import { Generate3DButton } from "@/components/generate-3d-button"
 import { FaceOverlay } from "./face-overlay"
 import type { ManifestPhoto } from "@/types/photo"
 
@@ -260,14 +261,17 @@ export function PhotoViewer({
           isVisible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
         )}
       >
-        <Button
-          onClick={handleDownload}
-          disabled={downloading}
-          className="h-12 w-full max-w-xs rounded-full bg-white text-sm font-medium lowercase tracking-wider text-black active:scale-[0.97] disabled:opacity-40"
-        >
-          <Download className="mr-2 h-4 w-4" />
-          {downloading ? "saving..." : "save photo"}
-        </Button>
+        <div className="flex w-full max-w-xs items-center gap-2">
+          <Button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="h-12 flex-1 rounded-full bg-white text-sm font-medium lowercase tracking-wider text-black active:scale-[0.97] disabled:opacity-40"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {downloading ? "saving..." : "save photo"}
+          </Button>
+          <Generate3DButton photoName={photo.name} size="md" />
+        </div>
         <span className="max-w-[80%] truncate font-mono text-[10px] lowercase tracking-wide text-white/20">
           {photo.name}
         </span>
