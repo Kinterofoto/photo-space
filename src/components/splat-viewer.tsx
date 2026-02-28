@@ -17,7 +17,7 @@ interface SplatViewerProps {
   onClose: () => void
 }
 
-const INITIAL_CAM = new THREE.Vector3(0, 0, -3)
+const INITIAL_CAM = new THREE.Vector3(0, 0, 3)
 const INITIAL_TARGET = new THREE.Vector3(0, 0, 0)
 
 function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.MutableRefObject<(() => void) | null> }) {
@@ -30,8 +30,8 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
     if (!SparkRendererClass || !SplatMeshClass) return
 
     const spark = new SparkRendererClass({ renderer: gl })
-    // Rotate 180° on Y so the splat faces the camera
-    spark.rotation.set(0, Math.PI, 0)
+    // COLMAP → Three.js: flip Y-down to Y-up (rotate π on X)
+    spark.rotation.set(Math.PI, 0, 0)
     scene.add(spark)
     sparkRef.current = spark
 
@@ -177,7 +177,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
           </div>
         ) : (
           <Canvas
-            camera={{ position: [0, 0, -3], fov: 50 }}
+            camera={{ position: [0, 0, 3], fov: 50 }}
             dpr={[1, 2]}
             gl={{ antialias: false }}
           >
