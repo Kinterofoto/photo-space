@@ -24,10 +24,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: "none" })
   }
 
-  return NextResponse.json(result[0], {
+  const row = {
+    ...result[0],
+    plyUrl: result[0].plyUrl?.replace(/\n/g, "") ?? null,
+  }
+
+  return NextResponse.json(row, {
     headers: {
       "Cache-Control":
-        result[0].status === "ready"
+        row.status === "ready"
           ? "public, s-maxage=3600, stale-while-revalidate=86400"
           : "no-cache",
     },
