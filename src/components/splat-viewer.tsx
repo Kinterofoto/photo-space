@@ -65,15 +65,18 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
         enablePan={true}
         enableZoom={true}
         enableRotate={true}
-        autoRotate={true}
-        autoRotateSpeed={0.3}
+        autoRotate={false}
         enableDamping={true}
         dampingFactor={0.08}
-        rotateSpeed={0.5}
-        panSpeed={0.5}
-        zoomSpeed={0.7}
-        minDistance={1}
-        maxDistance={6}
+        // Drag = pan, right-click = rotate, scroll = zoom
+        mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }}
+        // Touch: 1 finger = pan, 2 fingers = zoom + rotate
+        touches={{ ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }}
+        panSpeed={1.2}
+        rotateSpeed={0.4}
+        zoomSpeed={0.8}
+        minDistance={0.3}
+        maxDistance={8}
       />
     </>
   )
@@ -194,7 +197,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
         )}
       >
         <span className="font-mono text-[10px] lowercase tracking-wider text-white/15">
-          drag to rotate · pinch to zoom
+          drag to move · scroll to zoom · right-click to rotate
         </span>
       </div>
     </div>
