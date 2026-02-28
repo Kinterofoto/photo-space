@@ -72,11 +72,11 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
         mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }}
         // Touch: 1 finger = pan, 2 fingers = zoom + rotate
         touches={{ ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }}
-        panSpeed={1.2}
+        panSpeed={2}
         rotateSpeed={0.4}
-        zoomSpeed={1.5}
-        minDistance={0.02}
-        maxDistance={12}
+        zoomSpeed={3}
+        minDistance={0}
+        maxDistance={20}
       />
     </>
   )
