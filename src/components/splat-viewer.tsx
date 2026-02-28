@@ -74,9 +74,9 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
         touches={{ ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }}
         panSpeed={1.2}
         rotateSpeed={0.4}
-        zoomSpeed={0.8}
-        minDistance={0.3}
-        maxDistance={8}
+        zoomSpeed={1.5}
+        minDistance={0.02}
+        maxDistance={12}
       />
     </>
   )
@@ -169,7 +169,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
       </div>
 
       {/* 3D Canvas */}
-      <div className="flex-1">
+      <div className="flex-1" onWheel={(e) => e.stopPropagation()}>
         {loadError ? (
           <div className="flex h-full items-center justify-center">
             <span className="font-mono text-sm text-white/30">{loadError}</span>
