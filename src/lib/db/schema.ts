@@ -47,6 +47,24 @@ export const faces = pgTable(
   ]
 )
 
+export const splats = pgTable(
+  "splats",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    photoName: text("photo_name").notNull().unique(),
+    plyUrl: text("ply_url"),
+    status: text("status").notNull().default("pending"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("splats_photo_name_idx").on(table.photoName),
+    index("splats_status_idx").on(table.status),
+  ]
+)
+
 export type Photo = typeof photos.$inferSelect
 export type Person = typeof persons.$inferSelect
 export type Face = typeof faces.$inferSelect
+export type Splat = typeof splats.$inferSelect

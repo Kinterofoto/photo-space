@@ -14,3 +14,13 @@ export interface ProcessedPhoto extends ManifestPhoto {
   floatSpeed: number
   floatOffset: number
 }
+
+export type SplatStatus = "pending" | "processing" | "ready" | "error"
+
+export interface SplatInfo {
+  id: string
+  photoName: string
+  plyUrl: string | null
+  status: SplatStatus
+  errorMessage: string | null
+}
