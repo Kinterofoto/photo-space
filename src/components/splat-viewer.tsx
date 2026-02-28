@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import { Canvas, extend, useThree, useFrame } from "@react-three/fiber"
+import { useState, useEffect, useCallback, useRef } from "react"
+import { Canvas, useThree, useFrame } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
 import { X, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -19,6 +19,67 @@ interface SplatViewerProps {
 
 const INITIAL_CAM = new THREE.Vector3(0, 0, 3)
 const INITIAL_TARGET = new THREE.Vector3(0, 0, 0)
+
+function usePlyDownload(plyUrl: string) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [progress, setProgress] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+
+    async function download() {
+      try {
+        const res = await fetch(plyUrl, { signal: controller.signal })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+        const contentLength = res.headers.get("content-length")
+        const total = contentLength ? parseInt(contentLength, 10) : 0
+        const reader = res.body?.getReader()
+        if (!reader) throw new Error("No response body")
+
+        const chunks: Uint8Array[] = []
+        let received = 0
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          chunks.push(value)
+          received += value.length
+          if (total > 0 && !cancelled) {
+            setProgress(Math.round((received / total) * 100))
+          }
+        }
+
+        if (cancelled) return
+
+        const blob = new Blob(chunks as BlobPart[])
+        const url = URL.createObjectURL(blob)
+        setBlobUrl(url)
+        setProgress(100)
+      } catch (err) {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : "Download failed")
+      }
+    }
+
+    download()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [plyUrl])
+
+  // Clean up blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl)
+    }
+  }, [blobUrl])
+
+  return { blobUrl, progress, error }
+}
 
 function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.MutableRefObject<(() => void) | null> }) {
   const { gl, scene, camera } = useThree()
@@ -90,11 +151,19 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
   )
 }
 
+function isTouchDevice() {
+  if (typeof window === "undefined") return false
+  return "ontouchstart" in window || navigator.maxTouchPoints > 0
+}
+
 export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
   const [isVisible, setIsVisible] = useState(false)
   const [sparkReady, setSparkReady] = useState(sparkExtended)
   const [loadError, setLoadError] = useState<string | null>(null)
   const resetRef = useRef<(() => void) | null>(null)
+
+  // Pre-fetch .ply with progress
+  const { blobUrl, progress, error: downloadError } = usePlyDownload(plyUrl)
 
   useEffect(() => {
     if (sparkExtended) {
@@ -134,12 +203,17 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
     return () => window.removeEventListener("keydown", handler)
   }, [handleClose])
 
+  const isTouch = isTouchDevice()
+  const isDownloading = !blobUrl && !downloadError
+  const combinedError = loadError || downloadError
+
   return (
     <div
       className={cn(
         "fixed inset-0 z-[60] flex flex-col transition-all duration-250",
         isVisible ? "bg-black" : "bg-transparent pointer-events-none"
       )}
+      style={{ touchAction: "none" }}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onMouseUp={(e) => e.stopPropagation()}
@@ -149,7 +223,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
       {/* Top bar */}
       <div
         className={cn(
-          "flex items-center justify-between px-4 py-3 transition-all duration-300",
+          "flex shrink-0 items-center justify-between px-4 py-3 pt-[max(env(safe-area-inset-top,12px),12px)] transition-all duration-300",
           isVisible ? "opacity-100" : "opacity-0"
         )}
       >
@@ -177,22 +251,47 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
       </div>
 
       {/* 3D Canvas */}
-      <div className="flex-1" onWheel={(e) => e.stopPropagation()}>
-        {loadError ? (
+      <div
+        className="relative min-h-0 flex-1"
+        style={{ touchAction: "none" }}
+        onWheel={(e) => e.stopPropagation()}
+      >
+        {combinedError ? (
           <div className="flex h-full items-center justify-center">
-            <span className="font-mono text-sm text-white/30">{loadError}</span>
+            <span className="font-mono text-sm text-white/30">{combinedError}</span>
           </div>
-        ) : !sparkReady ? (
-          <div className="flex h-full items-center justify-center">
-            <div className="h-5 w-5 animate-spin rounded-full border-[1.5px] border-white/10 border-t-white/50" />
+        ) : !sparkReady || !blobUrl ? (
+          <div className="flex h-full flex-col items-center justify-center gap-4">
+            {/* Progress ring */}
+            <div className="relative flex h-16 w-16 items-center justify-center">
+              <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
+                <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="2" />
+                <circle
+                  cx="32" cy="32" r="28" fill="none"
+                  stroke="rgba(255,255,255,0.4)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 28}`}
+                  strokeDashoffset={`${2 * Math.PI * 28 * (1 - progress / 100)}`}
+                  className="transition-all duration-300"
+                />
+              </svg>
+              <span className="absolute font-mono text-xs tabular-nums text-white/40">
+                {progress}%
+              </span>
+            </div>
+            <span className="font-mono text-[10px] lowercase tracking-wider text-white/20">
+              downloading 3d model...
+            </span>
           </div>
         ) : (
           <Canvas
             camera={{ position: [0, 0, 3], fov: 50 }}
-            dpr={[1, 2]}
+            dpr={[1, isTouch ? 1.5 : 2]}
             gl={{ antialias: false }}
+            style={{ width: "100%", height: "100%", touchAction: "none" }}
           >
-            <SplatScene plyUrl={plyUrl} onResetRef={resetRef} />
+            <SplatScene plyUrl={blobUrl} onResetRef={resetRef} />
           </Canvas>
         )}
       </div>
@@ -200,12 +299,14 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
       {/* Hint text */}
       <div
         className={cn(
-          "pb-[env(safe-area-inset-bottom,16px)] text-center transition-all duration-300",
+          "shrink-0 pb-[max(env(safe-area-inset-bottom,16px),16px)] text-center transition-all duration-300",
           isVisible ? "opacity-100" : "opacity-0"
         )}
       >
         <span className="font-mono text-[10px] lowercase tracking-wider text-white/15">
-          drag to move · scroll to zoom · right-click to rotate
+          {isTouch
+            ? "drag to move · pinch to zoom · two fingers to rotate"
+            : "drag to move · scroll to zoom · right-click to rotate"}
         </span>
       </div>
     </div>
