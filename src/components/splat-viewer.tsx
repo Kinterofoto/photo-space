@@ -103,6 +103,11 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
         "fixed inset-0 z-[60] flex flex-col transition-all duration-250",
         isVisible ? "bg-black" : "bg-transparent pointer-events-none"
       )}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseUp={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
     >
       {/* Top bar */}
       <div
