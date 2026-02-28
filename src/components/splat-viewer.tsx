@@ -49,22 +49,13 @@ function SplatScene({ plyUrl }: { plyUrl: string }) {
         enableRotate={true}
         autoRotate={true}
         autoRotateSpeed={0.3}
-        // Smooth damping — feels like sliding on ice
         enableDamping={true}
-        dampingFactor={0.06}
-        // Limit vertical rotation so you don't flip upside down
-        minPolarAngle={Math.PI * 0.25}
-        maxPolarAngle={Math.PI * 0.75}
-        // Limit horizontal rotation to ±60° from front
-        minAzimuthAngle={-Math.PI / 3}
-        maxAzimuthAngle={Math.PI / 3}
-        // Limit zoom range
-        minDistance={1.5}
-        maxDistance={5}
-        // Slow down rotation speed
-        rotateSpeed={0.4}
-        panSpeed={0.4}
-        zoomSpeed={0.6}
+        dampingFactor={0.08}
+        rotateSpeed={0.5}
+        panSpeed={0.5}
+        zoomSpeed={0.7}
+        minDistance={1}
+        maxDistance={6}
       />
     </>
   )
