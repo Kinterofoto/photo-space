@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { Canvas, extend, useThree, useFrame } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
-import { X } from "lucide-react"
+import { X, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
 import * as THREE from "three"
 
@@ -17,15 +17,21 @@ interface SplatViewerProps {
   onClose: () => void
 }
 
-function SplatScene({ plyUrl }: { plyUrl: string }) {
-  const { gl, scene } = useThree()
+const INITIAL_CAM = new THREE.Vector3(0, 0, -3)
+const INITIAL_TARGET = new THREE.Vector3(0, 0, 0)
+
+function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.MutableRefObject<(() => void) | null> }) {
+  const { gl, scene, camera } = useThree()
   const sparkRef = useRef<any>(null)
   const splatRef = useRef<any>(null)
+  const controlsRef = useRef<any>(null)
 
   useEffect(() => {
     if (!SparkRendererClass || !SplatMeshClass) return
 
     const spark = new SparkRendererClass({ renderer: gl })
+    // Rotate 180° on Y so the splat faces the camera
+    spark.rotation.set(0, Math.PI, 0)
     scene.add(spark)
     sparkRef.current = spark
 
@@ -40,10 +46,22 @@ function SplatScene({ plyUrl }: { plyUrl: string }) {
     }
   }, [gl, scene, plyUrl])
 
+  // Expose reset function
+  useEffect(() => {
+    onResetRef.current = () => {
+      if (controlsRef.current) {
+        camera.position.copy(INITIAL_CAM)
+        controlsRef.current.target.copy(INITIAL_TARGET)
+        controlsRef.current.update()
+      }
+    }
+  }, [camera, onResetRef])
+
   return (
     <>
       <color attach="background" args={["#000000"]} />
       <OrbitControls
+        ref={controlsRef}
         enablePan={true}
         enableZoom={true}
         enableRotate={true}
@@ -65,6 +83,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
   const [isVisible, setIsVisible] = useState(false)
   const [sparkReady, setSparkReady] = useState(sparkExtended)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const resetRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (sparkExtended) {
@@ -126,15 +145,24 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
         <span className="font-mono text-[10px] lowercase tracking-wider text-white/30">
           3d view
         </span>
-        <span className="max-w-[50%] truncate font-mono text-[10px] lowercase tracking-wider text-white/20">
+        <span className="max-w-[40%] truncate font-mono text-[10px] lowercase tracking-wider text-white/20">
           {photoName}
         </span>
-        <button
-          onClick={handleClose}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/40 hover:bg-white/10 hover:text-white/60"
-        >
-          <X className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => resetRef.current?.()}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-white/40 hover:bg-white/10 hover:text-white/60"
+            title="center view"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={handleClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-white/40 hover:bg-white/10 hover:text-white/60"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       {/* 3D Canvas */}
@@ -149,11 +177,11 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
           </div>
         ) : (
           <Canvas
-            camera={{ position: [0, 0, 3], fov: 50 }}
+            camera={{ position: [0, 0, -3], fov: 50 }}
             dpr={[1, 2]}
             gl={{ antialias: false }}
           >
-            <SplatScene plyUrl={plyUrl} />
+            <SplatScene plyUrl={plyUrl} onResetRef={resetRef} />
           </Canvas>
         )}
       </div>
