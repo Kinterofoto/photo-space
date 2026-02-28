@@ -97,11 +97,15 @@ export async function POST(request: NextRequest) {
     const modalData = await modalRes.json()
 
     if (modalData.status === "ready") {
+      // .ply is served from Modal's splat endpoint
+      const splatUrl = process.env.MODAL_SPLAT_URL
+      const plyUrl = `${splatUrl}?photo_name=${encodeURIComponent(photo[0].name)}`
+
       await db
         .update(splats)
         .set({
           status: "ready",
-          plyUrl: modalData.ply_url,
+          plyUrl,
           updatedAt: new Date(),
         })
         .where(eq(splats.photoName, photoName))
@@ -109,7 +113,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         photoName,
         status: "ready",
-        plyUrl: modalData.ply_url,
+        plyUrl,
       })
     } else {
       await db

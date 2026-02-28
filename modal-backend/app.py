@@ -1,12 +1,9 @@
 """
 Modal serverless GPU backend for Apple SHARP (3D Gaussian Splatting).
 
-Deploys a FastAPI endpoint that:
-1. Receives an image URL + photo name
-2. Downloads the image
-3. Runs SHARP predict to generate a 3D Gaussian Splat (.ply)
-4. Uploads the .ply to Supabase storage
-5. Returns the public URL
+Deploys two endpoints:
+- POST /generate: Receives image URL + photo name, runs SHARP, stores .ply on Volume
+- GET /splat: Serves a stored .ply file by name
 
 Deploy: modal deploy app.py
 """
@@ -15,8 +12,8 @@ import modal
 
 app = modal.App("photo-space-sharp")
 
-# Persistent volume for caching SHARP model checkpoints
-volume = modal.Volume.from_name("sharp-checkpoints", create_if_missing=True)
+# Volume for model checkpoints AND generated .ply files
+volume = modal.Volume.from_name("sharp-data", create_if_missing=True)
 
 image = (
     modal.Image.debian_slim(python_version="3.13")
@@ -26,7 +23,6 @@ image = (
         "torchvision",
         "fastapi",
         "requests",
-        "supabase",
     )
     .run_commands("pip install git+https://github.com/apple/ml-sharp.git")
 )
@@ -36,16 +32,16 @@ image = (
     image=image,
     gpu="T4",
     timeout=120,
-    volumes={"/checkpoints": volume},
-    secrets=[modal.Secret.from_name("photo-space-supabase")],
+    volumes={"/data": volume},
 )
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def generate(body: dict):
     """
     POST body: { "image_url": "...", "photo_name": "..." }
-    Returns: { "ply_url": "...", "status": "ready" } or { "error": "...", "status": "error" }
+    Returns: { "ply_url": "...", "status": "ready" }
     """
     import os
+    import shutil
     import subprocess
     import tempfile
 
@@ -56,6 +52,12 @@ def generate(body: dict):
 
     if not image_url or not photo_name:
         return {"error": "image_url and photo_name are required", "status": "error"}
+
+    # Check if already generated
+    base_name = os.path.splitext(photo_name)[0]
+    ply_storage = f"/data/splats/{base_name}.ply"
+    if os.path.exists(ply_storage):
+        return {"status": "ready"}
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Download input image
@@ -73,54 +75,63 @@ def generate(body: dict):
         output_dir = os.path.join(tmpdir, "output")
         os.makedirs(output_dir, exist_ok=True)
 
-        # Set cache dir so checkpoints persist across cold starts
         env = os.environ.copy()
-        env["TORCH_HOME"] = "/checkpoints"
+        env["TORCH_HOME"] = "/data/checkpoints"
 
         result = subprocess.run(
             ["sharp", "predict", "-i", img_path, "-o", output_dir],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=90,
             env=env,
         )
 
         if result.returncode != 0:
             return {"error": result.stderr[:500], "status": "error"}
 
-        # Find the .ply output file
+        # Find the .ply output
         ply_files = [f for f in os.listdir(output_dir) if f.endswith(".ply")]
         if not ply_files:
             return {"error": "No .ply file generated", "status": "error"}
 
-        ply_path = os.path.join(output_dir, ply_files[0])
+        # Copy to persistent volume
+        os.makedirs("/data/splats", exist_ok=True)
+        shutil.copy2(os.path.join(output_dir, ply_files[0]), ply_storage)
+        volume.commit()
 
-        # Upload to Supabase storage
-        try:
-            from supabase import create_client
+        return {"status": "ready"}
 
-            supabase = create_client(
-                os.environ["SUPABASE_URL"],
-                os.environ["SUPABASE_SERVICE_KEY"],
-            )
 
-            # Strip extension from photo_name for storage path
-            base_name = os.path.splitext(photo_name)[0]
-            storage_path = f"{base_name}.ply"
+@app.function(
+    image=modal.Image.debian_slim(python_version="3.13").pip_install("fastapi"),
+    volumes={"/data": volume},
+)
+@modal.fastapi_endpoint(method="GET")
+def splat(photo_name: str):
+    """
+    GET ?photo_name=IMG_1491.JPG → serves the .ply file
+    """
+    import os
 
-            with open(ply_path, "rb") as f:
-                supabase.storage.from_("splats").upload(
-                    storage_path,
-                    f.read(),
-                    file_options={"content-type": "application/octet-stream"},
-                )
+    from fastapi.responses import Response
 
-            ply_url = f"{os.environ['SUPABASE_URL']}/storage/v1/object/public/splats/{storage_path}"
+    base_name = os.path.splitext(photo_name)[0]
+    ply_path = f"/data/splats/{base_name}.ply"
 
-            # Commit volume to persist checkpoints
-            volume.commit()
+    volume.reload()
 
-            return {"ply_url": ply_url, "status": "ready"}
+    if not os.path.exists(ply_path):
+        return Response(content='{"error":"not found"}', status_code=404, media_type="application/json")
 
-        except Exception as e:
-            return {"error": f"Upload failed: {e}", "status": "error"}
+    with open(ply_path, "rb") as f:
+        data = f.read()
+
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'inline; filename="{base_name}.ply"',
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
