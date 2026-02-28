@@ -1,12 +1,15 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { Canvas, extend } from "@react-three/fiber"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { Canvas, extend, useThree, useFrame } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import * as THREE from "three"
 
 let sparkExtended = false
+let SparkRendererClass: any = null
+let SplatMeshClass: any = null
 
 interface SplatViewerProps {
   plyUrl: string
@@ -15,12 +18,31 @@ interface SplatViewerProps {
 }
 
 function SplatScene({ plyUrl }: { plyUrl: string }) {
+  const { gl, scene } = useThree()
+  const sparkRef = useRef<any>(null)
+  const splatRef = useRef<any>(null)
+
+  useEffect(() => {
+    if (!SparkRendererClass || !SplatMeshClass) return
+
+    const spark = new SparkRendererClass({ renderer: gl })
+    scene.add(spark)
+    sparkRef.current = spark
+
+    const splat = new SplatMeshClass({ url: plyUrl })
+    spark.add(splat)
+    splatRef.current = splat
+
+    return () => {
+      scene.remove(spark)
+      spark.dispose?.()
+      splat.dispose?.()
+    }
+  }, [gl, scene, plyUrl])
+
   return (
     <>
       <color attach="background" args={["#000000"]} />
-      <sparkRenderer>
-        <splatMesh url={plyUrl} />
-      </sparkRenderer>
       <OrbitControls
         enablePan={true}
         enableZoom={true}
@@ -44,8 +66,9 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
     }
 
     import("@sparkjsdev/spark")
-      .then(({ SparkRenderer, SplatMesh }) => {
-        extend({ SparkRenderer, SplatMesh })
+      .then((mod) => {
+        SparkRendererClass = mod.SparkRenderer
+        SplatMeshClass = mod.SplatMesh
         sparkExtended = true
         setSparkReady(true)
       })
@@ -114,9 +137,9 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
           </div>
         ) : (
           <Canvas
-            camera={{ position: [0, 0, 2], fov: 50 }}
+            camera={{ position: [0, 0, 3], fov: 50 }}
             dpr={[1, 2]}
-            gl={{ antialias: true }}
+            gl={{ antialias: false }}
           >
             <SplatScene plyUrl={plyUrl} />
           </Canvas>
