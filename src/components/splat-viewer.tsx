@@ -20,8 +20,11 @@ interface SplatViewerProps {
 const INITIAL_CAM = new THREE.Vector3(0, 0, 3)
 const INITIAL_TARGET = new THREE.Vector3(0, 0, 0)
 
+type DownloadPhase = "connecting" | "downloading" | "done"
+
 function usePlyDownload(plyUrl: string) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [phase, setPhase] = useState<DownloadPhase>("connecting")
   const [progress, setProgress] = useState(0) // 0-100 if total known, -1 if unknown
   const [downloadedMB, setDownloadedMB] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -34,6 +37,9 @@ function usePlyDownload(plyUrl: string) {
       try {
         const res = await fetch(plyUrl, { signal: controller.signal })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+        if (cancelled) return
+        setPhase("downloading")
 
         const contentLength = res.headers.get("content-length")
         const total = contentLength ? parseInt(contentLength, 10) : 0
@@ -63,6 +69,7 @@ function usePlyDownload(plyUrl: string) {
         const blob = new Blob(chunks as BlobPart[])
         const url = URL.createObjectURL(blob)
         setBlobUrl(url)
+        setPhase("done")
         setProgress(100)
       } catch (err) {
         if (cancelled) return
@@ -84,7 +91,7 @@ function usePlyDownload(plyUrl: string) {
     }
   }, [blobUrl])
 
-  return { blobUrl, progress, downloadedMB, error }
+  return { blobUrl, phase, progress, downloadedMB, error }
 }
 
 function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.MutableRefObject<(() => void) | null> }) {
@@ -169,7 +176,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
   const resetRef = useRef<(() => void) | null>(null)
 
   // Pre-fetch .ply with progress
-  const { blobUrl, progress, downloadedMB, error: downloadError } = usePlyDownload(plyUrl)
+  const { blobUrl, phase, progress, downloadedMB, error: downloadError } = usePlyDownload(plyUrl)
 
   useEffect(() => {
     if (sparkExtended) {
@@ -268,39 +275,50 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
           </div>
         ) : !sparkReady || !blobUrl ? (
           <div className="flex h-full flex-col items-center justify-center gap-4">
-            {/* Progress ring */}
-            <div className="relative flex h-16 w-16 items-center justify-center">
-              <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
-                <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="2" />
-                {progress >= 0 ? (
-                  <circle
-                    cx="32" cy="32" r="28" fill="none"
-                    stroke="rgba(255,255,255,0.4)"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeDasharray={`${2 * Math.PI * 28}`}
-                    strokeDashoffset={`${2 * Math.PI * 28 * (1 - progress / 100)}`}
-                    className="transition-all duration-300"
-                  />
-                ) : (
-                  <circle
-                    cx="32" cy="32" r="28" fill="none"
-                    stroke="rgba(255,255,255,0.4)"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeDasharray="20 156"
-                    className="animate-spin origin-center"
-                    style={{ animationDuration: "1.5s" }}
-                  />
-                )}
-              </svg>
-              <span className="absolute font-mono text-xs tabular-nums text-white/40">
-                {progress >= 0 ? `${progress}%` : `${downloadedMB.toFixed(0)}mb`}
-              </span>
-            </div>
-            <span className="font-mono text-[10px] lowercase tracking-wider text-white/20">
-              downloading 3d model...
-            </span>
+            {phase === "connecting" ? (
+              <>
+                <div className="h-5 w-5 animate-spin rounded-full border-[1.5px] border-white/10 border-t-white/50" />
+                <span className="font-mono text-[10px] lowercase tracking-wider text-white/20">
+                  connecting to server...
+                </span>
+              </>
+            ) : (
+              <>
+                {/* Progress ring */}
+                <div className="relative flex h-16 w-16 items-center justify-center">
+                  <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
+                    <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="2" />
+                    {progress >= 0 ? (
+                      <circle
+                        cx="32" cy="32" r="28" fill="none"
+                        stroke="rgba(255,255,255,0.4)"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeDasharray={`${2 * Math.PI * 28}`}
+                        strokeDashoffset={`${2 * Math.PI * 28 * (1 - progress / 100)}`}
+                        className="transition-all duration-300"
+                      />
+                    ) : (
+                      <circle
+                        cx="32" cy="32" r="28" fill="none"
+                        stroke="rgba(255,255,255,0.4)"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeDasharray="20 156"
+                        className="animate-spin origin-center"
+                        style={{ animationDuration: "1.5s" }}
+                      />
+                    )}
+                  </svg>
+                  <span className="absolute font-mono text-xs tabular-nums text-white/40">
+                    {progress >= 0 ? `${progress}%` : `${downloadedMB.toFixed(0)}mb`}
+                  </span>
+                </div>
+                <span className="font-mono text-[10px] lowercase tracking-wider text-white/20">
+                  downloading 3d model...
+                </span>
+              </>
+            )}
           </div>
         ) : (
           <Canvas
