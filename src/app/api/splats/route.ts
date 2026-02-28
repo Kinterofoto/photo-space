@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
   // Return immediately — Modal runs in background via after()
   after(async () => {
     try {
-      const modalUrl = process.env.MODAL_ENDPOINT_URL
+      const modalUrl = process.env.MODAL_ENDPOINT_URL?.trim()
       if (!modalUrl) throw new Error("MODAL_ENDPOINT_URL not configured")
 
       const modalRes = await fetch(modalUrl, {
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       const modalData = await modalRes.json()
 
       if (modalData.status === "ready") {
-        const splatUrl = process.env.MODAL_SPLAT_URL
+        const splatUrl = process.env.MODAL_SPLAT_URL?.trim()
         const plyUrl = `${splatUrl}?photo_name=${encodeURIComponent(photo[0].name)}`
 
         await db
