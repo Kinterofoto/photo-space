@@ -12,11 +12,19 @@ app = modal.App("photo-space-sharp")
 
 volume = modal.Volume.from_name("sharp-data", create_if_missing=True)
 
+CHECKPOINT_URL = "https://ml-site.cdn-apple.com/models/sharp/sharp_2572gikvuh.pt"
+CHECKPOINT_PATH = "/root/.cache/sharp/sharp_2572gikvuh.pt"
+
 gpu_image = (
     modal.Image.debian_slim(python_version="3.13")
     .apt_install("git", "libgl1-mesa-glx", "libglib2.0-0")
     .pip_install("torch", "torchvision", "fastapi", "requests", "numpy")
     .run_commands("pip install git+https://github.com/apple/ml-sharp.git")
+    # Bake checkpoint into image → eliminates download on cold start
+    .run_commands(
+        f"mkdir -p /root/.cache/sharp && "
+        f"python -c \"import torch; torch.hub.load_state_dict_from_url('{CHECKPOINT_URL}', model_dir='/root/.cache/sharp', progress=True)\""
+    )
 )
 
 
@@ -30,30 +38,23 @@ gpu_image = (
 class SharpPredictor:
     @modal.enter()
     def load_model(self):
-        """Load SHARP model once when container starts."""
+        """Load SHARP model from baked-in checkpoint (~5s)."""
         import logging
-        import os
         import torch
         from sharp.models import PredictorParams, create_predictor
 
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger("sharp-modal")
 
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        else:
-            self.device = "cpu"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.logger.info(f"Using device: {self.device}")
 
-        # Load checkpoint (cached on volume)
-        os.environ["TORCH_HOME"] = "/data/checkpoints"
-        url = "https://ml-site.cdn-apple.com/models/sharp/sharp_2572gikvuh.pt"
-        state_dict = torch.hub.load_state_dict_from_url(url, progress=True)
-
+        # Create model on GPU, then load weights directly to GPU
         self.predictor = create_predictor(PredictorParams())
+        self.predictor.to(self.device)
+        state_dict = torch.load(CHECKPOINT_PATH, map_location=self.device, weights_only=True)
         self.predictor.load_state_dict(state_dict)
         self.predictor.eval()
-        self.predictor.to(self.device)
         self.logger.info("Model loaded and ready.")
 
     @modal.fastapi_endpoint(method="POST")
