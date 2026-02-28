@@ -43,6 +43,10 @@ export function useGenerateSplat() {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(["splat", data.photoName], data)
+      // If processing, invalidate to trigger polling
+      if (data.status === "processing") {
+        queryClient.invalidateQueries({ queryKey: ["splat", data.photoName] })
+      }
     },
   })
 }

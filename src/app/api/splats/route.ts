@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { after } from "next/server"
 import { db } from "@/lib/db"
 import { splats, photos } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -78,68 +79,49 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Call Modal endpoint
-  try {
-    const modalUrl = process.env.MODAL_ENDPOINT_URL
-    if (!modalUrl) {
-      throw new Error("MODAL_ENDPOINT_URL not configured")
-    }
+  // Return immediately — Modal runs in background via after()
+  after(async () => {
+    try {
+      const modalUrl = process.env.MODAL_ENDPOINT_URL
+      if (!modalUrl) throw new Error("MODAL_ENDPOINT_URL not configured")
 
-    const modalRes = await fetch(modalUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image_url: photo[0].url,
-        photo_name: photo[0].name,
-      }),
-    })
-
-    const modalData = await modalRes.json()
-
-    if (modalData.status === "ready") {
-      // .ply is served from Modal's splat endpoint
-      const splatUrl = process.env.MODAL_SPLAT_URL
-      const plyUrl = `${splatUrl}?photo_name=${encodeURIComponent(photo[0].name)}`
-
-      await db
-        .update(splats)
-        .set({
-          status: "ready",
-          plyUrl,
-          updatedAt: new Date(),
-        })
-        .where(eq(splats.photoName, photoName))
-
-      return NextResponse.json({
-        photoName,
-        status: "ready",
-        plyUrl,
+      const modalRes = await fetch(modalUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_url: photo[0].url,
+          photo_name: photo[0].name,
+        }),
       })
-    } else {
+
+      const modalData = await modalRes.json()
+
+      if (modalData.status === "ready") {
+        const splatUrl = process.env.MODAL_SPLAT_URL
+        const plyUrl = `${splatUrl}?photo_name=${encodeURIComponent(photo[0].name)}`
+
+        await db
+          .update(splats)
+          .set({ status: "ready", plyUrl, updatedAt: new Date() })
+          .where(eq(splats.photoName, photoName))
+      } else {
+        await db
+          .update(splats)
+          .set({
+            status: "error",
+            errorMessage: modalData.error || "Unknown error",
+            updatedAt: new Date(),
+          })
+          .where(eq(splats.photoName, photoName))
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error"
       await db
         .update(splats)
-        .set({
-          status: "error",
-          errorMessage: modalData.error || "Unknown error",
-          updatedAt: new Date(),
-        })
+        .set({ status: "error", errorMessage: msg, updatedAt: new Date() })
         .where(eq(splats.photoName, photoName))
-
-      return NextResponse.json(
-        { photoName, status: "error", error: modalData.error },
-        { status: 500 }
-      )
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error"
-    await db
-      .update(splats)
-      .set({ status: "error", errorMessage: msg, updatedAt: new Date() })
-      .where(eq(splats.photoName, photoName))
+  })
 
-    return NextResponse.json(
-      { photoName, status: "error", error: msg },
-      { status: 500 }
-    )
-  }
+  return NextResponse.json({ photoName, status: "processing" })
 }
