@@ -57,6 +57,16 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
     }
   }, [camera, onResetRef])
 
+  // Scale pan/rotate speed inversely with distance so it stays fast when zoomed in
+  useFrame(() => {
+    if (!controlsRef.current) return
+    const dist = camera.position.distanceTo(controlsRef.current.target)
+    const baseDist = 3
+    const scale = Math.max(baseDist / Math.max(dist, 0.01), 1)
+    controlsRef.current.panSpeed = 2 * scale
+    controlsRef.current.rotateSpeed = 0.4 * scale
+  })
+
   return (
     <>
       <color attach="background" args={["#000000"]} />
@@ -68,9 +78,7 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
         autoRotate={false}
         enableDamping={true}
         dampingFactor={0.08}
-        // Drag = pan, right-click = rotate, scroll = zoom
         mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }}
-        // Touch: 1 finger = pan, 2 fingers = zoom + rotate
         touches={{ ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }}
         panSpeed={2}
         rotateSpeed={0.4}
