@@ -146,5 +146,6 @@ def splat(photo_name: str):
         headers={
             "Cache-Control": "public, max-age=31536000, immutable",
             "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "Content-Length",
         },
     )
