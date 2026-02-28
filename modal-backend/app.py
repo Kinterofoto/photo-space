@@ -1,9 +1,7 @@
 """
 Modal serverless GPU backend for Apple SHARP (3D Gaussian Splatting).
 
-Deploys two endpoints:
-- POST /generate: Receives image URL + photo name, runs SHARP, stores .ply on Volume
-- GET /splat: Serves a stored .ply file by name
+Model loads ONCE on container start, then each prediction is ~18-20s on T4.
 
 Deploy: modal deploy app.py
 """
@@ -12,108 +10,121 @@ import modal
 
 app = modal.App("photo-space-sharp")
 
-# Volume for model checkpoints AND generated .ply files
 volume = modal.Volume.from_name("sharp-data", create_if_missing=True)
 
-image = (
+gpu_image = (
     modal.Image.debian_slim(python_version="3.13")
-    .apt_install("git", "wget", "libgl1-mesa-glx", "libglib2.0-0")
-    .pip_install(
-        "torch",
-        "torchvision",
-        "fastapi",
-        "requests",
-    )
+    .apt_install("git", "libgl1-mesa-glx", "libglib2.0-0")
+    .pip_install("torch", "torchvision", "fastapi", "requests", "numpy")
     .run_commands("pip install git+https://github.com/apple/ml-sharp.git")
 )
 
 
-@app.function(
-    image=image,
+@app.cls(
+    image=gpu_image,
     gpu="T4",
     timeout=120,
     volumes={"/data": volume},
+    scaledown_window=300,
 )
-@modal.fastapi_endpoint(method="POST")
-def generate(body: dict):
-    """
-    POST body: { "image_url": "...", "photo_name": "..." }
-    Returns: { "ply_url": "...", "status": "ready" }
-    """
-    import os
-    import shutil
-    import subprocess
-    import tempfile
+class SharpPredictor:
+    @modal.enter()
+    def load_model(self):
+        """Load SHARP model once when container starts."""
+        import logging
+        import os
+        import torch
+        from sharp.models import PredictorParams, create_predictor
 
-    import requests
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger("sharp-modal")
 
-    image_url = body.get("image_url")
-    photo_name = body.get("photo_name")
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        else:
+            self.device = "cpu"
+        self.logger.info(f"Using device: {self.device}")
 
-    if not image_url or not photo_name:
-        return {"error": "image_url and photo_name are required", "status": "error"}
+        # Load checkpoint (cached on volume)
+        os.environ["TORCH_HOME"] = "/data/checkpoints"
+        url = "https://ml-site.cdn-apple.com/models/sharp/sharp_2572gikvuh.pt"
+        state_dict = torch.hub.load_state_dict_from_url(url, progress=True)
 
-    # Check if already generated
-    base_name = os.path.splitext(photo_name)[0]
-    ply_storage = f"/data/splats/{base_name}.ply"
-    if os.path.exists(ply_storage):
-        return {"status": "ready"}
+        self.predictor = create_predictor(PredictorParams())
+        self.predictor.load_state_dict(state_dict)
+        self.predictor.eval()
+        self.predictor.to(self.device)
+        self.logger.info("Model loaded and ready.")
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Download input image
-        img_path = os.path.join(tmpdir, "input.jpg")
+    @modal.fastapi_endpoint(method="POST")
+    def generate(self, body: dict):
+        import os
+        import time
+        from pathlib import Path
+        import requests as http_requests
+        from sharp.cli.predict import predict_image, save_ply
+        from sharp.utils import io
+
+        image_url = body.get("image_url")
+        photo_name = body.get("photo_name")
+
+        if not image_url or not photo_name:
+            return {"error": "image_url and photo_name are required", "status": "error"}
+
+        base_name = os.path.splitext(photo_name)[0]
+        ply_storage = f"/data/splats/{base_name}.ply"
+
+        if os.path.exists(ply_storage):
+            return {"status": "ready"}
+
+        t0 = time.time()
+
+        # Download image
         try:
-            resp = requests.get(image_url, timeout=30)
+            resp = http_requests.get(image_url, timeout=30)
             resp.raise_for_status()
         except Exception as e:
             return {"error": f"Failed to download image: {e}", "status": "error"}
 
-        with open(img_path, "wb") as f:
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
             f.write(resp.content)
+            tmp_path = f.name
 
-        # Run SHARP predict
-        output_dir = os.path.join(tmpdir, "output")
-        os.makedirs(output_dir, exist_ok=True)
+        try:
+            # Load image using SHARP's io
+            image, _, f_px = io.load_rgb(Path(tmp_path))
 
-        env = os.environ.copy()
-        env["TORCH_HOME"] = "/data/checkpoints"
+            # Run prediction (model already loaded!)
+            gaussians = predict_image(self.predictor, image, f_px, self.device)
 
-        result = subprocess.run(
-            ["sharp", "predict", "-i", img_path, "-o", output_dir],
-            capture_output=True,
-            text=True,
-            timeout=90,
-            env=env,
-        )
+            # Save PLY
+            os.makedirs("/data/splats", exist_ok=True)
+            h, w = image.shape[:2]
+            save_ply(gaussians, f_px, (h, w), Path(ply_storage))
+            volume.commit()
 
-        if result.returncode != 0:
-            return {"error": result.stderr[:500], "status": "error"}
+            elapsed = time.time() - t0
+            self.logger.info(f"Generated {photo_name} in {elapsed:.1f}s")
 
-        # Find the .ply output
-        ply_files = [f for f in os.listdir(output_dir) if f.endswith(".ply")]
-        if not ply_files:
-            return {"error": "No .ply file generated", "status": "error"}
-
-        # Copy to persistent volume
-        os.makedirs("/data/splats", exist_ok=True)
-        shutil.copy2(os.path.join(output_dir, ply_files[0]), ply_storage)
-        volume.commit()
-
-        return {"status": "ready"}
+            return {"status": "ready", "time": round(elapsed, 1)}
+        except Exception as e:
+            self.logger.error(f"Error generating {photo_name}: {e}")
+            return {"error": str(e)[:500], "status": "error"}
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
 
 @app.function(
     image=modal.Image.debian_slim(python_version="3.13").pip_install("fastapi"),
     volumes={"/data": volume},
+    scaledown_window=300,
 )
 @modal.fastapi_endpoint(method="GET")
 def splat(photo_name: str):
-    """
-    GET ?photo_name=IMG_1491.JPG → serves the .ply file
-    """
     import os
-
-    from fastapi.responses import Response
+    from fastapi.responses import FileResponse, Response
 
     base_name = os.path.splitext(photo_name)[0]
     ply_path = f"/data/splats/{base_name}.ply"
@@ -121,16 +132,17 @@ def splat(photo_name: str):
     volume.reload()
 
     if not os.path.exists(ply_path):
-        return Response(content='{"error":"not found"}', status_code=404, media_type="application/json")
+        return Response(
+            content='{"error":"not found"}',
+            status_code=404,
+            media_type="application/json",
+        )
 
-    with open(ply_path, "rb") as f:
-        data = f.read()
-
-    return Response(
-        content=data,
+    return FileResponse(
+        path=ply_path,
         media_type="application/octet-stream",
+        filename=f"{base_name}.ply",
         headers={
-            "Content-Disposition": f'inline; filename="{base_name}.ply"',
             "Cache-Control": "public, max-age=31536000, immutable",
             "Access-Control-Allow-Origin": "*",
         },
