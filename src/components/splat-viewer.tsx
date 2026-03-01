@@ -226,12 +226,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
         "fixed inset-0 z-[60] flex flex-col transition-all duration-250",
         isVisible ? "bg-black" : "bg-transparent pointer-events-none"
       )}
-      style={{ touchAction: "none" }}
       onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
-      onMouseUp={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
-      onPointerUp={(e) => e.stopPropagation()}
     >
       {/* Top bar */}
       <div
@@ -264,11 +259,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
       </div>
 
       {/* 3D Canvas */}
-      <div
-        className="relative min-h-0 flex-1"
-        style={{ touchAction: "none" }}
-        onWheel={(e) => e.stopPropagation()}
-      >
+      <div className="relative min-h-0 flex-1">
         {combinedError ? (
           <div className="flex h-full items-center justify-center">
             <span className="font-mono text-sm text-white/30">{combinedError}</span>
