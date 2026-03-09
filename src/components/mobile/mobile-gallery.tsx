@@ -11,8 +11,11 @@ import { useNamePerson } from "@/hooks/use-name-person"
 import { cn } from "@/lib/utils"
 import type { PersonWithFace } from "@/hooks/use-persons"
 
+const EVENTS = ["all", "codebrew", "sheships"] as const
+
 export function MobileGallery() {
-  const { photos, loading } = useManifest()
+  const [selectedEvent, setSelectedEvent] = useState<string | null>(null)
+  const { photos, loading } = useManifest(selectedEvent)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set())
   const gridRef = useRef<HTMLDivElement>(null)
@@ -87,7 +90,7 @@ export function MobileGallery() {
     <div className="min-h-screen bg-black">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-black/70 backdrop-blur-xl">
-        <div className="flex items-center justify-between px-4 pb-3 pt-[max(env(safe-area-inset-top),12px)]">
+        <div className="flex items-center justify-between px-4 pb-2 pt-[max(env(safe-area-inset-top),12px)]">
           <h1 className="font-mono text-[11px] font-light lowercase tracking-[5px] text-white/40">
             photo space
           </h1>
@@ -117,6 +120,24 @@ export function MobileGallery() {
             </button>
             <GithubBadge />
           </div>
+        </div>
+
+        {/* Event filter */}
+        <div className="flex items-center gap-1 px-4 pb-2">
+          {EVENTS.map((ev) => (
+            <button
+              key={ev}
+              onClick={() => setSelectedEvent(ev === "all" ? null : ev)}
+              className={cn(
+                "rounded-full px-3 py-1 font-mono text-[10px] lowercase tracking-wider transition-all",
+                (ev === "all" && !selectedEvent) || selectedEvent === ev
+                  ? "bg-white/10 text-white/60"
+                  : "text-white/25 active:bg-white/5"
+              )}
+            >
+              {ev}
+            </button>
+          ))}
         </div>
 
         {/* People strip */}

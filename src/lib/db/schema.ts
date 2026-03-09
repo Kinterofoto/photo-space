@@ -16,6 +16,7 @@ export const photos = pgTable("photos", {
   thumbUrl: text("thumb_url").notNull(),
   width: integer("width"),
   height: integer("height"),
+  event: text("event").notNull().default("codebrew"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 

@@ -11,7 +11,8 @@
     "process-faces": "bun run scripts/process-faces.ts",
     "cluster-faces": "bun run scripts/cluster-faces.ts",
     "clean-db": "bun run scripts/clean-db.ts",
-    "populate-photos": "bun run scripts/populate-photos.ts"
+    "populate-photos": "bun run scripts/populate-photos.ts",
+    "upload-local": "bun run scripts/upload-local.ts"
   },
   "dependencies": {
     "@aws-sdk/client-rekognition": "^3.600.0",

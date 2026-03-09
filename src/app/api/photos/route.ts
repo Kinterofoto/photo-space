@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { photos, faces } from "@/lib/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { eq, asc, and } from "drizzle-orm"
 
 export async function GET(request: NextRequest) {
   const personId = request.nextUrl.searchParams.get("person_id")
+  const event = request.nextUrl.searchParams.get("event")
 
   if (personId) {
     // Filter: photos containing a specific person
@@ -18,7 +19,9 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  // Default: return all photos
+  // Default: return all photos, optionally filtered by event
+  const conditions = event ? eq(photos.event, event) : undefined
+
   const allPhotos = await db
     .select({
       id: photos.id,
@@ -27,8 +30,10 @@ export async function GET(request: NextRequest) {
       thumbUrl: photos.thumbUrl,
       width: photos.width,
       height: photos.height,
+      event: photos.event,
     })
     .from(photos)
+    .where(conditions)
     .orderBy(asc(photos.name))
 
   return NextResponse.json(allPhotos, {

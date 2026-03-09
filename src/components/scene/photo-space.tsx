@@ -17,8 +17,11 @@ import type { ProcessedPhoto } from "@/types/photo"
 
 type ViewMode = "3d" | "grid"
 
+const EVENTS = ["all", "codebrew", "sheships"] as const
+
 export function PhotoSpace() {
-  const { photos: manifest } = useManifest()
+  const [selectedEvent, setSelectedEvent] = useState<string | null>(null)
+  const { photos: manifest } = useManifest(selectedEvent)
   const downloadingRef = useRef(false)
   const isDragging = useRef(false)
   const pointerDownPos = useRef({ x: 0, y: 0 })
@@ -138,30 +141,50 @@ export function PhotoSpace() {
     >
       {/* Top bar */}
       <div className="pointer-events-none fixed left-0 right-0 top-0 z-30 flex items-center justify-between px-5 py-4">
-        {/* View mode toggle */}
-        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/[0.06] bg-black/50 p-1 backdrop-blur-xl">
-          <button
-            onClick={() => setViewMode("3d")}
-            className={cn(
-              "rounded-full px-3 py-1 font-mono text-[10px] lowercase tracking-wider transition-all",
-              viewMode === "3d"
-                ? "bg-white/10 text-white/60"
-                : "text-white/25 hover:text-white/40"
-            )}
-          >
-            3d
-          </button>
-          <button
-            onClick={() => setViewMode("grid")}
-            className={cn(
-              "rounded-full px-3 py-1 font-mono text-[10px] lowercase tracking-wider transition-all",
-              viewMode === "grid"
-                ? "bg-white/10 text-white/60"
-                : "text-white/25 hover:text-white/40"
-            )}
-          >
-            grid
-          </button>
+        <div className="pointer-events-auto flex items-center gap-3">
+          {/* View mode toggle */}
+          <div className="flex items-center gap-1 rounded-full border border-white/[0.06] bg-black/50 p-1 backdrop-blur-xl">
+            <button
+              onClick={() => setViewMode("3d")}
+              className={cn(
+                "rounded-full px-3 py-1 font-mono text-[10px] lowercase tracking-wider transition-all",
+                viewMode === "3d"
+                  ? "bg-white/10 text-white/60"
+                  : "text-white/25 hover:text-white/40"
+              )}
+            >
+              3d
+            </button>
+            <button
+              onClick={() => setViewMode("grid")}
+              className={cn(
+                "rounded-full px-3 py-1 font-mono text-[10px] lowercase tracking-wider transition-all",
+                viewMode === "grid"
+                  ? "bg-white/10 text-white/60"
+                  : "text-white/25 hover:text-white/40"
+              )}
+            >
+              grid
+            </button>
+          </div>
+
+          {/* Event filter */}
+          <div className="flex items-center gap-1 rounded-full border border-white/[0.06] bg-black/50 p-1 backdrop-blur-xl">
+            {EVENTS.map((ev) => (
+              <button
+                key={ev}
+                onClick={() => setSelectedEvent(ev === "all" ? null : ev)}
+                className={cn(
+                  "rounded-full px-3 py-1 font-mono text-[10px] lowercase tracking-wider transition-all",
+                  (ev === "all" && !selectedEvent) || selectedEvent === ev
+                    ? "bg-white/10 text-white/60"
+                    : "text-white/25 hover:text-white/40"
+                )}
+              >
+                {ev}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">

@@ -5,6 +5,7 @@ export interface ManifestPhoto {
   thumbUrl: string
   width: number | null
   height: number | null
+  event: string
 }
 
 export interface ProcessedPhoto extends ManifestPhoto {
