@@ -8,7 +8,7 @@ const sql = neon(process.env.DATABASE_URL!)
 
 const COLLECTION_ID =
   process.env.REKOGNITION_COLLECTION_ID ?? "photo-space-faces"
-const MATCH_THRESHOLD = 80 // Rekognition similarity threshold (0-100)
+const MATCH_THRESHOLD = 90 // Rekognition similarity threshold (0-100)
 
 const rekognition = new RekognitionClient({
   region: process.env.AWS_REGION ?? "us-east-1",
@@ -66,38 +66,53 @@ class UnionFind {
 }
 
 async function main() {
-  console.log("Loading faces from database...")
-
-  const rows = (await sql`
-    SELECT id, aws_face_id FROM faces WHERE aws_face_id IS NOT NULL ORDER BY created_at ASC
+  // ── 1. Load unassigned faces ──
+  console.log("Loading unassigned faces...")
+  const unassigned = (await sql`
+    SELECT id, aws_face_id FROM faces
+    WHERE aws_face_id IS NOT NULL AND person_id IS NULL
+    ORDER BY created_at ASC
   `) as { id: string; aws_face_id: string }[]
 
-  if (rows.length === 0) {
-    console.error("No faces in database. Run 'bun run process-faces' first.")
-    process.exit(1)
+  if (unassigned.length === 0) {
+    console.log("No unassigned faces — nothing to do.")
+    return
   }
 
-  console.log(`Loaded ${rows.length} faces.`)
+  console.log(`Found ${unassigned.length} unassigned face(s).`)
 
-  // Build a map from awsFaceId → dbId
-  const awsToDb = new Map<string, string>()
-  for (const row of rows) {
-    awsToDb.set(row.aws_face_id, row.id)
+  // ── 2. Load existing assigned faces → awsFaceId → personId map ──
+  const assigned = (await sql`
+    SELECT aws_face_id, person_id FROM faces
+    WHERE aws_face_id IS NOT NULL AND person_id IS NOT NULL
+  `) as { aws_face_id: string; person_id: string }[]
+
+  const awsToPersonId = new Map<string, string>()
+  for (const row of assigned) {
+    awsToPersonId.set(row.aws_face_id, row.person_id)
   }
 
-  // Union-Find over DB face IDs
+  console.log(`${assigned.length} already-assigned face(s) loaded for matching.`)
+
+  // ── 3. For each unassigned face, SearchFaces in Rekognition ──
+  // Build awsFaceId → dbId map for unassigned faces
+  const awsToUnassignedDbId = new Map<string, string>()
+  for (const row of unassigned) {
+    awsToUnassignedDbId.set(row.aws_face_id, row.id)
+  }
+
+  // Direct assignments: face dbId → personId (matched to existing person)
+  const directAssign = new Map<string, string>()
+  // UnionFind for unassigned faces that match each other but not an existing person
   const uf = new UnionFind()
-  for (const row of rows) {
+  for (const row of unassigned) {
     uf.add(row.id)
   }
 
-  // For each face, SearchFaces to find matches
-  console.log(
-    `Searching for matches (threshold=${MATCH_THRESHOLD})...\n`
-  )
+  console.log(`\nSearching for matches (threshold=${MATCH_THRESHOLD})...\n`)
 
   let searchCount = 0
-  for (const row of rows) {
+  for (const row of unassigned) {
     try {
       const result = await rekognition.send(
         new SearchFacesCommand({
@@ -108,11 +123,20 @@ async function main() {
         })
       )
 
+      // Rekognition returns matches sorted by similarity (highest first)
       for (const match of result.FaceMatches ?? []) {
         const matchedAwsId = match.Face?.FaceId
         if (!matchedAwsId) continue
 
-        const matchedDbId = awsToDb.get(matchedAwsId)
+        // Check if match is an already-assigned face → direct assign to that person
+        const existingPersonId = awsToPersonId.get(matchedAwsId)
+        if (existingPersonId && !directAssign.has(row.id)) {
+          directAssign.set(row.id, existingPersonId)
+          continue
+        }
+
+        // Check if match is another unassigned face → union them
+        const matchedDbId = awsToUnassignedDbId.get(matchedAwsId)
         if (matchedDbId) {
           uf.union(row.id, matchedDbId)
         }
@@ -123,38 +147,77 @@ async function main() {
 
     searchCount++
     if (searchCount % 20 === 0) {
-      console.log(`  Searched ${searchCount}/${rows.length}...`)
+      console.log(`  Searched ${searchCount}/${unassigned.length}...`)
     }
   }
 
-  const clusters = uf.components()
-  console.log(`\nFound ${clusters.size} clusters.`)
+  // ── 4. Assign faces ──
+  const affectedPersonIds = new Set<string>()
 
-  // Clear existing person assignments
-  console.log("Clearing existing person assignments...")
-  await sql`UPDATE faces SET person_id = NULL`
-  await sql`DELETE FROM persons`
-
-  // Create persons and assign faces
-  let clusterIdx = 0
-  for (const [, faceIds] of clusters) {
-    const result = await sql`
-      INSERT INTO persons (face_count) VALUES (${faceIds.length})
-      RETURNING id
-    `
-    const personId = result[0].id
-
-    await sql`
-      UPDATE faces SET person_id = ${personId}
-      WHERE id = ANY(${faceIds}::uuid[])
-    `
-
-    console.log(
-      `  cluster_${clusterIdx++}: ${faceIds.length} face(s) → person ${personId}`
-    )
+  // 4a. Direct assignments to existing persons
+  let directCount = 0
+  for (const [faceId, personId] of directAssign) {
+    await sql`UPDATE faces SET person_id = ${personId} WHERE id = ${faceId}::uuid`
+    affectedPersonIds.add(personId)
+    directCount++
+  }
+  if (directCount > 0) {
+    console.log(`\nAssigned ${directCount} face(s) to existing persons.`)
   }
 
-  // Summary
+  // 4b. Process UnionFind clusters for remaining unassigned faces
+  const clusters = uf.components()
+  let newPersonCount = 0
+
+  for (const [, faceIds] of clusters) {
+    // Skip faces that were already directly assigned
+    const remaining = faceIds.filter((id) => !directAssign.has(id))
+    if (remaining.length === 0) continue
+
+    // Check if any face in this cluster was directly assigned → use that person
+    const clusterPersonId = faceIds
+      .map((id) => directAssign.get(id))
+      .find((pid) => pid !== undefined)
+
+    if (clusterPersonId) {
+      // Assign remaining faces to the same existing person
+      await sql`
+        UPDATE faces SET person_id = ${clusterPersonId}
+        WHERE id = ANY(${remaining}::uuid[])
+      `
+      affectedPersonIds.add(clusterPersonId)
+    } else {
+      // Create a new person for this cluster
+      const result = await sql`
+        INSERT INTO persons (face_count) VALUES (${remaining.length})
+        RETURNING id
+      `
+      const newPersonId = result[0].id
+      await sql`
+        UPDATE faces SET person_id = ${newPersonId}
+        WHERE id = ANY(${remaining}::uuid[])
+      `
+      affectedPersonIds.add(newPersonId)
+      newPersonCount++
+    }
+  }
+
+  if (newPersonCount > 0) {
+    console.log(`Created ${newPersonCount} new person(s).`)
+  }
+
+  // ── 5. Update face_count on all affected persons ──
+  if (affectedPersonIds.size > 0) {
+    const ids = Array.from(affectedPersonIds)
+    await sql`
+      UPDATE persons SET face_count = (
+        SELECT COUNT(*) FROM faces WHERE faces.person_id = persons.id
+      )
+      WHERE id = ANY(${ids}::uuid[])
+    `
+  }
+
+  // ── Summary ──
   const persons = await sql`SELECT id, name, face_count FROM persons ORDER BY face_count DESC`
   console.log(`\n--- Summary ---`)
   console.log(`Total persons: ${persons.length}`)
@@ -162,16 +225,7 @@ async function main() {
     console.log(`  ${p.name || "(unnamed)"}: ${p.face_count} faces`)
   }
 
-  const singles = persons.filter((p) => Number(p.face_count) === 1)
-  if (singles.length > 0) {
-    console.log(
-      `\nNote: ${singles.length} person(s) with only 1 face — may be unique or false detections`
-    )
-  }
-
-  console.log(
-    `\nDone. You can re-run this script anytime to re-cluster.`
-  )
+  console.log(`\nDone. Existing persons preserved, ${unassigned.length} new face(s) processed.`)
 }
 
 main().catch(console.error)

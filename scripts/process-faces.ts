@@ -300,18 +300,28 @@ async function processPhoto(
 
 // ── Main ──
 async function main() {
+  const eventFilter = process.argv[2] // optional event name filter
+
   await ensureCollection()
   const human = await initHuman()
 
-  const allPhotos = await sql`SELECT name, url FROM photos ORDER BY name ASC`
+  const allPhotos = eventFilter
+    ? await sql`SELECT name, url FROM photos WHERE event = ${eventFilter} ORDER BY name ASC`
+    : await sql`SELECT name, url FROM photos ORDER BY name ASC`
 
   if (allPhotos.length === 0) {
-    console.error("No photos in database. Run 'bun run populate-photos' first.")
+    console.error(
+      eventFilter
+        ? `No photos found for event "${eventFilter}". Check the event name or run 'bun run populate-photos' first.`
+        : "No photos in database. Run 'bun run populate-photos' first."
+    )
     process.exit(1)
   }
 
   console.log(
-    `\nProcessing ${allPhotos.length} photos (concurrency=${CONCURRENCY})...\n`
+    eventFilter
+      ? `\nProcessing ${allPhotos.length} photos for event "${eventFilter}" (concurrency=${CONCURRENCY})...\n`
+      : `\nProcessing ${allPhotos.length} photos (concurrency=${CONCURRENCY})...\n`
   )
 
   for (let i = 0; i < allPhotos.length; i += CONCURRENCY) {
@@ -333,7 +343,7 @@ async function main() {
   }
 
   const totalFaces = await sql`SELECT COUNT(*) as n FROM faces`
-  console.log(`\nDone. ${totalFaces[0].n} faces indexed.`)
+  console.log(`\nDone. ${totalFaces[0].n} total faces indexed.`)
   console.log(`Run 'bun run cluster-faces' to group them by identity.`)
 }
 
