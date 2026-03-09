@@ -187,7 +187,6 @@ export function MobileGallery() {
           selectedPersonId={selectedPersonId}
           onSelectPerson={setSelectedPersonId}
           onTapUnnamed={setNamingPerson}
-          event={selectedEvent}
         />
       </header>
 
