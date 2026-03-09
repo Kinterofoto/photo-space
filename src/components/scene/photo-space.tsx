@@ -10,6 +10,7 @@ import { CameraControls } from "./camera-controls"
 import { PeopleBar } from "./people-bar"
 import { DesktopGrid } from "./desktop-grid"
 import { useManifest } from "@/hooks/use-manifest"
+import { useFilterParams } from "@/hooks/use-filter-params"
 import { GithubBadge } from "@/components/github-badge"
 import { cn } from "@/lib/utils"
 import { SPREAD } from "@/lib/constants"
@@ -20,12 +21,11 @@ type ViewMode = "3d" | "grid"
 const EVENTS = ["all", "codebrew", "sheships"] as const
 
 export function PhotoSpace() {
-  const [selectedEvent, setSelectedEvent] = useState<string | null>(null)
+  const { event: selectedEvent, personId: selectedPersonId, setEvent: setSelectedEvent, setPerson: setSelectedPersonId } = useFilterParams()
   const { photos: manifest } = useManifest(selectedEvent)
   const downloadingRef = useRef(false)
   const isDragging = useRef(false)
   const pointerDownPos = useRef({ x: 0, y: 0 })
-  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "3d"
     return (localStorage.getItem("photo-space-view") as ViewMode) || "3d"
