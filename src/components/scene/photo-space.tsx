@@ -10,6 +10,8 @@ import { CameraControls } from "./camera-controls"
 import { PeopleBar } from "./people-bar"
 import { DesktopGrid } from "./desktop-grid"
 import { useManifest } from "@/hooks/use-manifest"
+import { useInfinitePhotos } from "@/hooks/use-infinite-photos"
+import { useFilterParams } from "@/hooks/use-filter-params"
 import { GithubBadge } from "@/components/github-badge"
 import { cn } from "@/lib/utils"
 import { SPREAD } from "@/lib/constants"
@@ -20,12 +22,23 @@ type ViewMode = "3d" | "grid"
 const EVENTS = ["all", "codebrew", "sheships"] as const
 
 export function PhotoSpace() {
-  const [selectedEvent, setSelectedEvent] = useState<string | null>(null)
+  const { event: selectedEvent, personId: selectedPersonId, setEvent: setSelectedEvent, setPerson: setSelectedPersonId } = useFilterParams()
+
+  // 3D mode: load all photos at once
   const { photos: manifest } = useManifest(selectedEvent)
+
+  // Grid mode: paginated infinite scroll
+  const {
+    photos: gridPhotos,
+    loading: gridLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfinitePhotos(selectedEvent, selectedPersonId)
+
   const downloadingRef = useRef(false)
   const isDragging = useRef(false)
   const pointerDownPos = useRef({ x: 0, y: 0 })
-  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "3d"
     return (localStorage.getItem("photo-space-view") as ViewMode) || "3d"
@@ -37,7 +50,7 @@ export function PhotoSpace() {
     localStorage.setItem("photo-space-view", viewMode)
   }, [viewMode])
 
-  // Fetch photo names for selected person
+  // 3D mode: fetch photo names for person highlighting
   const { data: personPhotoNames } = useQuery({
     queryKey: ["person-photos", selectedPersonId],
     queryFn: async () => {
@@ -47,7 +60,7 @@ export function PhotoSpace() {
       if (!res.ok) throw new Error("Failed to fetch photos")
       return res.json() as Promise<string[]>
     },
-    enabled: !!selectedPersonId,
+    enabled: !!selectedPersonId && viewMode === "3d",
   })
 
   const highlightedSet = useMemo(() => {
@@ -55,12 +68,6 @@ export function PhotoSpace() {
     if (!personPhotoNames) return new Set<string>()
     return new Set(personPhotoNames)
   }, [selectedPersonId, personPhotoNames])
-
-  // Filtered photos for grid mode
-  const filteredManifest = useMemo(() => {
-    if (!highlightedSet) return manifest
-    return manifest.filter((p) => highlightedSet.has(p.name))
-  }, [manifest, highlightedSet])
 
   // Compute random positions/rotations once when manifest loads
   const photos = useMemo<ProcessedPhoto[]>(
@@ -240,11 +247,17 @@ export function PhotoSpace() {
       {/* Grid View */}
       {viewMode === "grid" && (
         <div className="pt-16">
-          <DesktopGrid photos={filteredManifest} showLandmarks={showLandmarks} />
-          {filteredManifest.length > 0 && (
+          <DesktopGrid
+            photos={gridPhotos}
+            showLandmarks={showLandmarks}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            onLoadMore={fetchNextPage}
+          />
+          {!gridLoading && !hasNextPage && gridPhotos.length > 0 && (
             <div className="flex items-center justify-center py-8">
               <span className="font-mono text-[10px] lowercase tracking-[3px] text-white/20">
-                {filteredManifest.length} photos
+                {gridPhotos.length} photos
               </span>
             </div>
           )}
@@ -254,6 +267,7 @@ export function PhotoSpace() {
       <PeopleBar
         selectedPersonId={selectedPersonId}
         onSelectPerson={setSelectedPersonId}
+        event={selectedEvent}
       />
     </div>
   )

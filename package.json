@@ -35,6 +35,7 @@
     "motion": "^12.34.0",
     "next": "15",
     "next-cloudinary": "^6.17.5",
+    "photoswipe": "^5.4.4",
     "react": "^19",
     "react-dom": "^19",
     "sonner": "^2.0.0",
