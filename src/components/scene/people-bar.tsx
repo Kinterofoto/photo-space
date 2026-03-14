@@ -43,7 +43,7 @@ export function PeopleBar({ selectedPersonId, onSelectPerson, event }: PeopleBar
   return (
     <>
       <div className="fixed bottom-6 left-1/2 z-20 w-full max-w-[min(90vw,600px)] -translate-x-1/2">
-        <div className="rounded-full border border-white/[0.06] bg-black/60 backdrop-blur-xl">
+        <div className="overflow-hidden rounded-full border border-white/[0.06] bg-black/60 backdrop-blur-xl">
           <ScrollArea className="w-full">
             <div className="flex items-center gap-2 px-4 py-2">
               {/* All pill */}
@@ -113,7 +113,7 @@ export function PeopleBar({ selectedPersonId, onSelectPerson, event }: PeopleBar
                 )
               })}
             </div>
-            <ScrollBar orientation="horizontal" className="h-1.5" />
+            <ScrollBar orientation="horizontal" className="h-0 opacity-0" />
           </ScrollArea>
         </div>
       </div>
