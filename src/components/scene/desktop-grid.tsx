@@ -78,7 +78,7 @@ export function DesktopGrid({ photos, showLandmarks, hasNextPage, isFetchingNext
   const sentinelRef = useRef<HTMLDivElement>(null)
 
   // PhotoSwipe lightbox
-  const { open, currentPhotoName } = usePhotoSwipe(photos, "#desktop-photo-grid")
+  const { open, currentPhotoName } = usePhotoSwipe(photos, "#desktop-photo-grid", showLandmarks)
 
   // Infinite scroll sentinel
   useEffect(() => {
