@@ -247,8 +247,8 @@ export function PhotoViewer({
           />
           <canvas ref={canvasRef} className="pointer-events-none" />
 
-          {/* Face overlay */}
-          {faces && faces.length > 0 && (
+          {/* Face overlay — only after hi-res loads */}
+          {hiResSrc && faces && faces.length > 0 && (
             <FaceOverlay faces={faces} visible={showLandmarks} />
           )}
         </div>
