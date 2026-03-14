@@ -29,16 +29,16 @@ export function GithubBadge() {
       href="https://github.com/Kinterofoto/photo-space"
       target="_blank"
       rel="noopener noreferrer"
-      className="github-badge flex items-center gap-2 px-3 py-1.5 bg-card/60 backdrop-blur-sm border border-border/50 rounded-lg text-muted-foreground hover:text-foreground transition-all duration-300"
+      className="github-badge flex items-center gap-2 rounded-full border border-border/50 p-1.5 text-muted-foreground transition-all duration-300 hover:text-foreground sm:rounded-lg sm:bg-card/60 sm:px-3 sm:py-1.5 sm:backdrop-blur-sm"
       initial={{ opacity: 0.8 }}
       animate={{ opacity: 0.8 }}
       whileHover={{ opacity: 1 }}
     >
-      <GithubLogo className="w-4 h-4" />
+      <GithubLogo className="h-4 w-4" />
 
       {githubStars !== null && (
         <motion.span
-          className="text-xs font-medium flex items-center gap-1"
+          className="hidden items-center gap-1 text-xs font-medium sm:flex"
           key={githubStars}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

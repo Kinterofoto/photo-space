@@ -9,8 +9,14 @@ const DEFAULT_HEIGHT = 1200
 const SVG_NS = "http://www.w3.org/2000/svg"
 
 // Cloudinary transform: limit to maxDim, auto quality
-function viewUrl(url: string, maxDim = 2048): string {
+function viewUrl(url: string): string {
+  const maxDim = typeof window !== "undefined" && window.innerWidth < 768 ? 1200 : 2048
   return url.replace("/image/upload/", `/image/upload/w_${maxDim},c_limit,q_auto/`)
+}
+
+function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
 }
 
 function buildSlides(photos: ManifestPhoto[]) {
@@ -194,6 +200,22 @@ export function usePhotoSwipe(
             const slide = pswp.currSlide?.data
             if (!slide) return
 
+            const toastStyle = {
+              background: "transparent",
+              border: "none",
+              color: "rgba(255,255,255,0.7)",
+              fontSize: "14px",
+              letterSpacing: "2px",
+              textTransform: "lowercase" as const,
+              boxShadow: "none",
+            }
+
+            if (isIOS()) {
+              window.open(slide.downloadUrl, "_blank")
+              toast("long-press image to save", { style: toastStyle })
+              return
+            }
+
             fetch(slide.downloadUrl)
               .then((res) => res.blob())
               .then((blob) => {
@@ -203,17 +225,7 @@ export function usePhotoSwipe(
                 a.download = slide.photoName || "photo"
                 a.click()
                 URL.revokeObjectURL(blobUrl)
-                toast("saved", {
-                  style: {
-                    background: "transparent",
-                    border: "none",
-                    color: "rgba(255,255,255,0.7)",
-                    fontSize: "14px",
-                    letterSpacing: "2px",
-                    textTransform: "lowercase",
-                    boxShadow: "none",
-                  },
-                })
+                toast("saved", { style: toastStyle })
               })
               .catch(() => {
                 window.open(slide.downloadUrl, "_blank")
