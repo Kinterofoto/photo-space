@@ -5,7 +5,7 @@ import { useSearchParams, usePathname } from "next/navigation"
 
 export type ViewMode = "3d" | "grid"
 
-export function useFilterParams() {
+export function useFilterParams(defaultMode: ViewMode = "3d") {
   const searchParams = useSearchParams()
   const pathname = usePathname()
 
@@ -18,7 +18,7 @@ export function useFilterParams() {
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     const param = searchParams.get("view")
     if (param === "grid" || param === "3d") return param
-    return "3d"
+    return defaultMode
   })
 
   const updateUrl = useCallback(
