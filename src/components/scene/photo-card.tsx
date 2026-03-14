@@ -39,9 +39,11 @@ interface PhotoCardProps {
   onDownload: (filename: string) => void
   isDragging: React.RefObject<boolean>
   dimmed?: boolean
+  hiResWidth?: number
+  lodDistance?: number
 }
 
-export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: PhotoCardProps) {
+export function PhotoCard({ photo, onDownload, isDragging, dimmed = false, hiResWidth = 1920, lodDistance = LOD_DISTANCE }: PhotoCardProps) {
   const meshRef = useRef<THREE.Mesh>(null)
   const pointsRef = useRef<THREE.Points>(null)
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
@@ -89,7 +91,7 @@ export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: Pho
     if (hiRes || loadingHiRes) return
     setLoadingHiRes(true)
 
-    const optimizedUrl = getOptimizedUrl(photo.url)
+    const optimizedUrl = getOptimizedUrl(photo.url, hiResWidth)
 
     acquireSlot().then(() => {
       const img = new Image()
@@ -218,7 +220,7 @@ export function PhotoCard({ photo, onDownload, isDragging, dimmed = false }: Pho
     frameCount.current++
     if (frameCount.current % 10 === 0) {
       const dist = state.camera.position.distanceTo(mesh.position)
-      if (dist < LOD_DISTANCE) upgradeToHiRes()
+      if (dist < lodDistance) upgradeToHiRes()
     }
 
     // Smooth dimming when filtered
