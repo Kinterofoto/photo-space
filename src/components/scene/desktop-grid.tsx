@@ -18,18 +18,21 @@ interface DesktopGridProps {
 
 function GridPhoto({
   photo,
-  index,
+  batchIndex,
   showLandmarks,
   onClick,
 }: {
   photo: ManifestPhoto
-  index: number
+  batchIndex: number
   showLandmarks: boolean
   onClick: () => void
 }) {
   const [visible, setVisible] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const { data: faces } = useFaces(showLandmarks && visible ? photo.name : null)
+
+  const aspectRatio = photo.width && photo.height ? photo.width / photo.height : 4 / 3
 
   useEffect(() => {
     const el = ref.current
@@ -41,7 +44,7 @@ function GridPhoto({
           obs.unobserve(el)
         }
       },
-      { rootMargin: "100px", threshold: 0.1 }
+      { rootMargin: "200px", threshold: 0.1 }
     )
     obs.observe(el)
     return () => obs.disconnect()
@@ -52,23 +55,32 @@ function GridPhoto({
       ref={ref}
       data-pswp-thumb
       className={cn(
-        "group relative cursor-pointer break-inside-avoid overflow-hidden rounded-lg transition-all duration-500",
-        visible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+        "group relative cursor-pointer break-inside-avoid overflow-hidden rounded-lg",
+        "transition-all duration-500",
+        visible && loaded ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
       )}
-      style={{ transitionDelay: `${(index % 8) * 40}ms` }}
+      style={{
+        aspectRatio,
+        transitionDelay: `${(batchIndex % 8) * 40}ms`,
+      }}
       onClick={onClick}
     >
-      <img
-        src={photo.thumbUrl.replace("c_fill", "c_limit")}
-        alt=""
-        className="w-full transition-transform duration-300 group-hover:scale-[1.02]"
-        draggable={false}
-      />
-      {/* Hover overlay */}
-      <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/20" />
-      {/* Face overlay */}
-      {faces && faces.length > 0 && (
-        <FaceOverlay faces={faces} visible={showLandmarks} />
+      {visible && (
+        <>
+          <img
+            src={photo.thumbUrl.replace("c_fill", "c_limit")}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            draggable={false}
+            onLoad={() => setLoaded(true)}
+          />
+          {/* Hover overlay */}
+          <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/20" />
+          {/* Face overlay */}
+          {faces && faces.length > 0 && (
+            <FaceOverlay faces={faces} visible={showLandmarks} />
+          )}
+        </>
       )}
     </div>
   )
@@ -76,11 +88,12 @@ function GridPhoto({
 
 export function DesktopGrid({ photos, showLandmarks, hasNextPage, isFetchingNextPage, onLoadMore }: DesktopGridProps) {
   const sentinelRef = useRef<HTMLDivElement>(null)
+  const prevCountRef = useRef(0)
 
   // PhotoSwipe lightbox
   const { open, currentPhotoName } = usePhotoSwipe(photos, "#desktop-photo-grid", showLandmarks)
 
-  // Infinite scroll sentinel
+  // Infinite scroll sentinel — trigger early to stay ahead of fast scrolling
   useEffect(() => {
     const el = sentinelRef.current
     if (!el || !onLoadMore) return
@@ -91,12 +104,18 @@ export function DesktopGrid({ photos, showLandmarks, hasNextPage, isFetchingNext
           onLoadMore()
         }
       },
-      { rootMargin: "300px" }
+      { rootMargin: "1200px" }
     )
 
     observer.observe(el)
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, onLoadMore])
+
+  // Track where each batch starts so fade-in delay resets per batch
+  const batchStart = prevCountRef.current
+  useEffect(() => {
+    prevCountRef.current = photos.length
+  }, [photos.length])
 
   return (
     <>
@@ -105,7 +124,7 @@ export function DesktopGrid({ photos, showLandmarks, hasNextPage, isFetchingNext
           <div key={photo.name} className="mb-2">
             <GridPhoto
               photo={photo}
-              index={i}
+              batchIndex={i >= batchStart ? i - batchStart : 0}
               showLandmarks={showLandmarks}
               onClick={() => open(i)}
             />

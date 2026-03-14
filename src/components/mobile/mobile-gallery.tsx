@@ -20,42 +20,54 @@ const EVENTS = ["all", "codebrew", "sheships"] as const
 function ThumbPhoto({
   photo,
   index,
+  batchIndex,
   visible,
   showLandmarks,
   onClick,
 }: {
   photo: ManifestPhoto
   index: number
+  batchIndex: number
   visible: boolean
   showLandmarks: boolean
   onClick: () => void
 }) {
+  const [loaded, setLoaded] = useState(false)
   const { data: faces } = useFaces(showLandmarks && visible ? photo.name : null)
+
+  const aspectRatio = photo.width && photo.height ? photo.width / photo.height : 4 / 3
 
   return (
     <button
       data-index={index}
       data-pswp-thumb
       className={cn(
-        "relative mb-[5px] block w-full break-inside-avoid overflow-hidden rounded-[10px] transition-all duration-500",
+        "relative mb-[5px] block w-full break-inside-avoid overflow-hidden rounded-[10px]",
+        "transition-all duration-500",
         "active:scale-[0.97] active:brightness-75",
-        visible
+        visible && loaded
           ? "translate-y-0 opacity-100"
           : "translate-y-3 opacity-0"
       )}
       style={{
-        transitionDelay: visible ? `${(index % 6) * 60}ms` : "0ms",
+        aspectRatio,
+        transitionDelay: visible ? `${(batchIndex % 6) * 60}ms` : "0ms",
       }}
       onClick={onClick}
     >
-      <img
-        src={photo.thumbUrl.replace("c_fill", "c_limit")}
-        alt=""
-        className="w-full"
-        draggable={false}
-      />
-      {faces && faces.length > 0 && (
-        <FaceOverlay faces={faces} visible={showLandmarks} />
+      {visible && (
+        <>
+          <img
+            src={photo.thumbUrl.replace("c_fill", "c_limit")}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+            draggable={false}
+            onLoad={() => setLoaded(true)}
+          />
+          {faces && faces.length > 0 && (
+            <FaceOverlay faces={faces} visible={showLandmarks} />
+          )}
+        </>
       )}
     </button>
   )
@@ -67,6 +79,7 @@ export function MobileGallery() {
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set())
   const gridRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
+  const prevCountRef = useRef(0)
 
   // Face filtering
   const [namingPerson, setNamingPerson] = useState<PersonWithFace | null>(null)
@@ -77,10 +90,14 @@ export function MobileGallery() {
 
   const namePerson = useNamePerson()
 
-  // Observe photo items for staggered fade-in; re-run when photos change
+  // Track batch boundaries for stagger delay reset
+  const batchStart = prevCountRef.current
   useEffect(() => {
-    setVisibleItems(new Set())
+    prevCountRef.current = photos.length
+  }, [photos.length])
 
+  // Observe photo items for staggered fade-in
+  useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -88,20 +105,32 @@ export function MobileGallery() {
             const index = Number(
               (entry.target as HTMLElement).dataset.index
             )
-            setVisibleItems((prev) => new Set(prev).add(index))
+            setVisibleItems((prev) => {
+              if (prev.has(index)) return prev
+              return new Set(prev).add(index)
+            })
             observer.unobserve(entry.target)
           }
         })
       },
-      { rootMargin: "50px", threshold: 0.1 }
+      { rootMargin: "200px", threshold: 0.1 }
     )
 
     gridRef.current?.querySelectorAll<HTMLElement>("[data-index]").forEach(
-      (el) => observer.observe(el)
+      (el) => {
+        const index = Number(el.dataset.index)
+        if (!visibleItems.has(index)) observer.observe(el)
+      }
     )
 
     return () => observer.disconnect()
   }, [photos])
+
+  // Reset visible items when filters change (new query)
+  useEffect(() => {
+    setVisibleItems(new Set())
+    prevCountRef.current = 0
+  }, [selectedEvent, selectedPersonId])
 
   // Infinite scroll: observe sentinel to load next page
   useEffect(() => {
@@ -114,7 +143,7 @@ export function MobileGallery() {
           fetchNextPage()
         }
       },
-      { rootMargin: "300px" }
+      { rootMargin: "1200px" }
     )
 
     observer.observe(el)
@@ -198,6 +227,7 @@ export function MobileGallery() {
             key={photo.name}
             photo={photo}
             index={index}
+            batchIndex={index >= batchStart ? index - batchStart : 0}
             visible={visibleItems.has(index)}
             showLandmarks={showLandmarks}
             onClick={() => open(index)}
