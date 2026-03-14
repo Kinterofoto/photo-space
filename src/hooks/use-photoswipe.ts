@@ -239,20 +239,23 @@ export function usePhotoSwipe(
         })
       })
 
-      // Face overlay: contentResize fires on the pswp instance when a
-      // slide image gets its display size. Register on lightbox so the
-      // handler is attached before pswp dispatches its first events
-      // (change + contentResize fire BEFORE afterInit).
+      // Size the face overlay container when PhotoSwipe calculates
+      // the display dimensions (fires before the image finishes loading).
       lightbox.on("contentResize", (e: any) => {
         const { content, width, height } = e
-        const slide = content?.slide
-        const overlay = getOrCreateOverlay(slide)
+        const overlay = getOrCreateOverlay(content?.slide)
         if (!overlay) return
 
         overlay.style.width = width + "px"
         overlay.style.height = height + "px"
+      })
 
-        if (slide === lightbox.pswp?.currSlide) {
+      // Load face boxes only after the slide image has fully loaded.
+      lightbox.on("loadComplete", (e: any) => {
+        const slide = e.slide ?? e.content?.slide
+        if (!slide || slide !== lightbox.pswp?.currSlide) return
+        const overlay = getOrCreateOverlay(slide)
+        if (overlay) {
           loadFacesForOverlay(overlay, slide.data?.photoName, showFacesRef.current)
         }
       })
@@ -261,10 +264,14 @@ export function usePhotoSwipe(
         const pswp = lightbox.pswp
         setCurrentPhotoName(pswp?.currSlide?.data?.photoName ?? null)
 
+        // If the slide is already loaded (cached/preloaded), show faces now.
+        // Otherwise loadComplete will handle it.
         const slide = pswp?.currSlide
-        const overlay = slide?.container?.querySelector(".pswp-face-overlay") as HTMLDivElement | null
-        if (overlay) {
-          loadFacesForOverlay(overlay, slide.data?.photoName, showFacesRef.current)
+        if (slide?.content?.state === "loaded") {
+          const overlay = getOrCreateOverlay(slide)
+          if (overlay) {
+            loadFacesForOverlay(overlay, slide.data?.photoName, showFacesRef.current)
+          }
         }
       })
 
