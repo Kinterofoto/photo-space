@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, keepPreviousData } from "@tanstack/react-query"
 
 export interface PersonWithFace {
   id: string
@@ -22,5 +22,6 @@ export function usePersons(event?: string | null) {
   return useQuery({
     queryKey: ["persons", event ?? null],
     queryFn: () => fetchPersons(event),
+    placeholderData: keepPreviousData,
   })
 }

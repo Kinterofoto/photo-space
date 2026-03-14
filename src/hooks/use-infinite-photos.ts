@@ -1,6 +1,6 @@
 "use client"
 
-import { useInfiniteQuery } from "@tanstack/react-query"
+import { useInfiniteQuery, keepPreviousData } from "@tanstack/react-query"
 import type { ManifestPhoto } from "@/types/photo"
 
 const PAGE_SIZE = 30
@@ -26,6 +26,7 @@ export function useInfinitePhotos(
       return allPages.length * PAGE_SIZE
     },
     initialPageParam: 0,
+    placeholderData: keepPreviousData,
   })
 
   return {
