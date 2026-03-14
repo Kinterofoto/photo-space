@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { usePersons } from "@/hooks/use-persons"
 import type { FaceData } from "@/hooks/use-faces"
-import { FACE_MESH_TESSELATION } from "@/lib/face-mesh-tesselation"
 
 const IS_DEV = process.env.NODE_ENV === "development"
 
@@ -33,8 +32,6 @@ function FaceRegion({
 
   const cx = (face.boxX + face.boxW / 2) * 100
   const cy = (face.boxY + face.boxH / 2) * 100
-
-  const isMesh = face.landmarks.length >= 468
 
   return (
     <g
@@ -67,28 +64,8 @@ function FaceRegion({
         strokeDasharray={isSelected ? "none" : "0.8 0.4"}
       />
 
-      {isMesh ? (
-        /* 468-point mesh wireframe */
-        <g>
-          {FACE_MESH_TESSELATION.map(([a, b], i) => {
-            const ptA = face.landmarks[a]
-            const ptB = face.landmarks[b]
-            if (!ptA || !ptB) return null
-            return (
-              <line
-                key={i}
-                x1={`${ptA.x * 100}%`}
-                y1={`${ptA.y * 100}%`}
-                x2={`${ptB.x * 100}%`}
-                y2={`${ptB.y * 100}%`}
-                stroke="rgba(255,255,255,0.06)"
-                strokeWidth="0.08"
-              />
-            )
-          })}
-        </g>
-      ) : (
-        /* Fallback: render individual dots for non-468 landmarks */
+      {/* Landmark dots */}
+      {face.landmarks.length > 0 && (
         <g>
           {face.landmarks.map((pt, i) => (
             <circle
