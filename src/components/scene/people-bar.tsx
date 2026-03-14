@@ -10,6 +10,7 @@ import { useState } from "react"
 interface PeopleBarProps {
   selectedPersonId: string | null
   onSelectPerson: (personId: string | null) => void
+  event?: string | null
 }
 
 function PersonAvatar({ person }: { person: PersonWithFace }) {
@@ -32,8 +33,8 @@ function PersonAvatar({ person }: { person: PersonWithFace }) {
   )
 }
 
-export function PeopleBar({ selectedPersonId, onSelectPerson }: PeopleBarProps) {
-  const { data: persons, isLoading } = usePersons()
+export function PeopleBar({ selectedPersonId, onSelectPerson, event }: PeopleBarProps) {
+  const { data: persons, isLoading } = usePersons(event)
   const namePerson = useNamePerson()
   const [namingPerson, setNamingPerson] = useState<PersonWithFace | null>(null)
 
@@ -83,10 +84,10 @@ export function PeopleBar({ selectedPersonId, onSelectPerson }: PeopleBarProps) 
                       </div>
                       <span
                         className={cn(
-                          "max-w-[48px] truncate font-mono text-[8px] lowercase tracking-wide transition-colors",
+                          "max-w-[60px] truncate font-mono text-[10px] lowercase tracking-wide transition-colors",
                           isSelected
-                            ? "text-white/50"
-                            : "text-white/15 group-hover:text-white/30"
+                            ? "text-white/70"
+                            : "text-white/40 group-hover:text-white/55"
                         )}
                       >
                         {person.name || `face ${person.faceCount}`}

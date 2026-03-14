@@ -8,6 +8,7 @@ interface PeopleStripProps {
   selectedPersonId: string | null
   onSelectPerson: (personId: string | null) => void
   onTapUnnamed: (person: PersonWithFace) => void
+  event?: string | null
 }
 
 function PersonAvatar({ person }: { person: PersonWithFace }) {
@@ -34,8 +35,9 @@ export function PeopleStrip({
   selectedPersonId,
   onSelectPerson,
   onTapUnnamed,
+  event,
 }: PeopleStripProps) {
-  const { data: persons, isLoading } = usePersons()
+  const { data: persons, isLoading } = usePersons(event)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   if (isLoading || !persons || persons.length === 0) return null
