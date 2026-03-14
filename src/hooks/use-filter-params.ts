@@ -3,6 +3,8 @@
 import { useState, useCallback } from "react"
 import { useSearchParams, usePathname } from "next/navigation"
 
+export type ViewMode = "3d" | "grid"
+
 export function useFilterParams() {
   const searchParams = useSearchParams()
   const pathname = usePathname()
@@ -13,6 +15,11 @@ export function useFilterParams() {
   const [personId, setPersonIdState] = useState<string | null>(
     searchParams.get("person")
   )
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    const param = searchParams.get("view")
+    if (param === "grid" || param === "3d") return param
+    return "3d"
+  })
 
   const updateUrl = useCallback(
     (updates: Record<string, string | null>) => {
@@ -43,5 +50,13 @@ export function useFilterParams() {
     [updateUrl]
   )
 
-  return { event, personId, setEvent, setPerson }
+  const setViewMode = useCallback(
+    (mode: ViewMode) => {
+      setViewModeState(mode)
+      updateUrl({ view: mode === "3d" ? null : mode })
+    },
+    [updateUrl]
+  )
+
+  return { event, personId, viewMode, setEvent, setPerson, setViewMode }
 }

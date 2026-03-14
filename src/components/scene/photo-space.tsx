@@ -1,7 +1,7 @@
 "use client"
 
 import { Canvas } from "@react-three/fiber"
-import { Suspense, useMemo, useCallback, useRef, useState, useEffect } from "react"
+import { Suspense, useMemo, useCallback, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { PhotoCard } from "./photo-card"
@@ -17,12 +17,10 @@ import { cn } from "@/lib/utils"
 import { SPREAD } from "@/lib/constants"
 import type { ProcessedPhoto } from "@/types/photo"
 
-type ViewMode = "3d" | "grid"
-
 const EVENTS = ["all", "codebrew", "sheships"] as const
 
 export function PhotoSpace() {
-  const { event: selectedEvent, personId: selectedPersonId, setEvent: setSelectedEvent, setPerson: setSelectedPersonId } = useFilterParams()
+  const { event: selectedEvent, personId: selectedPersonId, viewMode, setEvent: setSelectedEvent, setPerson: setSelectedPersonId, setViewMode } = useFilterParams()
 
   // 3D mode: load all photos at once
   const { photos: manifest } = useManifest(selectedEvent)
@@ -39,16 +37,7 @@ export function PhotoSpace() {
   const downloadingRef = useRef(false)
   const isDragging = useRef(false)
   const pointerDownPos = useRef({ x: 0, y: 0 })
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === "undefined") return "3d"
-    return (localStorage.getItem("photo-space-view") as ViewMode) || "3d"
-  })
   const [showLandmarks, setShowLandmarks] = useState(true)
-
-  // Persist view mode
-  useEffect(() => {
-    localStorage.setItem("photo-space-view", viewMode)
-  }, [viewMode])
 
   // 3D mode: fetch photo names for person highlighting
   const { data: personPhotoNames } = useQuery({
