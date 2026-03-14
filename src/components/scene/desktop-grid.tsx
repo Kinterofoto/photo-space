@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import { useFaces } from "@/hooks/use-faces"
 import { FaceOverlay } from "@/components/mobile/face-overlay"
 import { usePhotoSwipe } from "@/hooks/use-photoswipe"
@@ -91,7 +92,7 @@ export function DesktopGrid({ photos, showLandmarks, hasNextPage, isFetchingNext
   const prevCountRef = useRef(0)
 
   // PhotoSwipe lightbox
-  const { open, currentPhotoName } = usePhotoSwipe(photos, "#desktop-photo-grid", showLandmarks)
+  const { open, currentPhotoName, topBarEl } = usePhotoSwipe(photos, "#desktop-photo-grid", showLandmarks)
 
   // Infinite scroll sentinel — trigger early to stay ahead of fast scrolling
   useEffect(() => {
@@ -135,11 +136,10 @@ export function DesktopGrid({ photos, showLandmarks, hasNextPage, isFetchingNext
       {/* Infinite scroll sentinel */}
       <div ref={sentinelRef} className="h-1" />
 
-      {/* 3D button — floating over PhotoSwipe when open */}
-      {currentPhotoName && (
-        <div className="fixed bottom-6 right-6 z-[100000]">
-          <Generate3DButton photoName={currentPhotoName} size="md" />
-        </div>
+      {/* 3D button — portaled into PhotoSwipe top bar */}
+      {currentPhotoName && topBarEl && createPortal(
+        <Generate3DButton photoName={currentPhotoName} size="md" />,
+        topBarEl
       )}
 
       {isFetchingNextPage && (

@@ -129,6 +129,7 @@ export function usePhotoSwipe(
   const showFacesRef = useRef(showFaces)
   showFacesRef.current = showFaces
   const [currentPhotoName, setCurrentPhotoName] = useState<string | null>(null)
+  const [topBarEl, setTopBarEl] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
     let lightbox: any
@@ -220,6 +221,19 @@ export function usePhotoSwipe(
           },
         })
 
+        // React portal target — sits left of the download button
+        lightbox.pswp.ui.registerElement({
+          name: "react-portal",
+          order: 7,
+          isButton: false,
+          appendTo: "bar",
+          html: "",
+          onInit: (el: HTMLElement) => {
+            el.style.cssText = "display:flex;align-items:center;margin-right:4px;"
+            setTopBarEl(el)
+          },
+        })
+
         // Counter
         lightbox.pswp.ui.registerElement({
           name: "photo-counter",
@@ -277,6 +291,7 @@ export function usePhotoSwipe(
 
       lightbox.on("destroy", () => {
         setCurrentPhotoName(null)
+        setTopBarEl(null)
       })
 
       lightbox.init()
@@ -313,5 +328,5 @@ export function usePhotoSwipe(
     lightboxRef.current?.loadAndOpen(index)
   }, [])
 
-  return { open, currentPhotoName }
+  return { open, currentPhotoName, topBarEl }
 }

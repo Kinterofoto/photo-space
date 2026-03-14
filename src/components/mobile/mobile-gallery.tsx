@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { useInfinitePhotos } from "@/hooks/use-infinite-photos"
 import { useFilterParams } from "@/hooks/use-filter-params"
 import { usePhotoSwipe } from "@/hooks/use-photoswipe"
@@ -86,7 +87,7 @@ export function MobileGallery() {
   const [showLandmarks, setShowLandmarks] = useState(true)
 
   // PhotoSwipe lightbox
-  const { open, currentPhotoName } = usePhotoSwipe(photos, "#mobile-photo-grid", showLandmarks)
+  const { open, currentPhotoName, topBarEl } = usePhotoSwipe(photos, "#mobile-photo-grid", showLandmarks)
 
   const namePerson = useNamePerson()
 
@@ -261,11 +262,10 @@ export function MobileGallery() {
         </div>
       )}
 
-      {/* 3D button — floating over PhotoSwipe when open */}
-      {currentPhotoName && (
-        <div className="fixed bottom-6 right-4 z-[100000]">
-          <Generate3DButton photoName={currentPhotoName} size="md" />
-        </div>
+      {/* 3D button — portaled into PhotoSwipe top bar */}
+      {currentPhotoName && topBarEl && createPortal(
+        <Generate3DButton photoName={currentPhotoName} size="md" />,
+        topBarEl
       )}
 
       {/* Person naming dialog */}
