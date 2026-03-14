@@ -42,6 +42,13 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "faceId is required" }, { status: 400 })
   }
 
+  // Look up the old person so we can update their count
+  const [existing] = await db
+    .select({ personId: faces.personId })
+    .from(faces)
+    .where(eq(faces.id, faceId))
+  const oldPersonId = existing?.personId
+
   // newPersonName → create new person, assign face to it
   // personId = null → untag
   // personId = string → reassign
@@ -60,12 +67,25 @@ export async function PATCH(request: NextRequest) {
     .set({ personId: targetPersonId ?? null })
     .where(eq(faces.id, faceId))
 
-  // Update face_count on affected persons
+  // Refresh face_count on the NEW person
   if (targetPersonId) {
     await db
       .update(persons)
       .set({ faceCount: sql`(SELECT COUNT(*) FROM faces WHERE faces.person_id = ${persons.id})` })
       .where(eq(persons.id, targetPersonId))
+  }
+
+  // Refresh face_count on the OLD person and delete if orphaned
+  if (oldPersonId && oldPersonId !== targetPersonId) {
+    const [updated] = await db
+      .update(persons)
+      .set({ faceCount: sql`(SELECT COUNT(*) FROM faces WHERE faces.person_id = ${persons.id})` })
+      .where(eq(persons.id, oldPersonId))
+      .returning({ faceCount: persons.faceCount })
+
+    if (updated && updated.faceCount === 0) {
+      await db.delete(persons).where(eq(persons.id, oldPersonId))
+    }
   }
 
   return NextResponse.json({ ok: true, personId: targetPersonId })
