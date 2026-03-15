@@ -1,41 +1,62 @@
 "use client"
 
-import { useSearchParams, useRouter, usePathname } from "next/navigation"
-import { useCallback } from "react"
+import { useState, useCallback } from "react"
+import { useSearchParams, usePathname } from "next/navigation"
 
-export function useFilterParams() {
+export type ViewMode = "3d" | "grid"
+
+export function useFilterParams(defaultMode: ViewMode = "3d") {
   const searchParams = useSearchParams()
-  const router = useRouter()
   const pathname = usePathname()
 
-  const event = searchParams.get("event")
-  const personId = searchParams.get("person")
+  const [event, setEventState] = useState<string | null>(
+    searchParams.get("event")
+  )
+  const [personId, setPersonIdState] = useState<string | null>(
+    searchParams.get("person")
+  )
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    const param = searchParams.get("view")
+    if (param === "grid" || param === "3d") return param
+    return defaultMode
+  })
 
-  const updateParams = useCallback(
+  const updateUrl = useCallback(
     (updates: Record<string, string | null>) => {
-      const params = new URLSearchParams(searchParams.toString())
+      const params = new URLSearchParams(window.location.search)
       for (const [key, value] of Object.entries(updates)) {
-        if (value === null) {
-          params.delete(key)
-        } else {
-          params.set(key, value)
-        }
+        if (value) params.set(key, value)
+        else params.delete(key)
       }
       const qs = params.toString()
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+      window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname)
     },
-    [searchParams, router, pathname]
+    [pathname]
   )
 
   const setEvent = useCallback(
-    (ev: string | null) => updateParams({ event: ev }),
-    [updateParams]
+    (ev: string | null) => {
+      setEventState(ev)
+      updateUrl({ event: ev })
+    },
+    [updateUrl]
   )
 
   const setPerson = useCallback(
-    (id: string | null) => updateParams({ person: id }),
-    [updateParams]
+    (pid: string | null) => {
+      setPersonIdState(pid)
+      updateUrl({ person: pid ? pid.slice(0, 8) : null })
+    },
+    [updateUrl]
   )
 
-  return { event, personId, setEvent, setPerson }
+  const setViewMode = useCallback(
+    (mode: ViewMode) => {
+      setViewModeState(mode)
+      updateUrl({ view: mode === "3d" ? null : mode })
+    },
+    [updateUrl]
+  )
+
+  return { event, personId, viewMode, setEvent, setPerson, setViewMode }
 }

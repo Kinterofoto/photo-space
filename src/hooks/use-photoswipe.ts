@@ -9,8 +9,14 @@ const DEFAULT_HEIGHT = 1200
 const SVG_NS = "http://www.w3.org/2000/svg"
 
 // Cloudinary transform: limit to maxDim, auto quality
-function viewUrl(url: string, maxDim = 2048): string {
+function viewUrl(url: string): string {
+  const maxDim = typeof window !== "undefined" && window.innerWidth < 768 ? 1200 : 2048
   return url.replace("/image/upload/", `/image/upload/w_${maxDim},c_limit,q_auto/`)
+}
+
+function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
 }
 
 function buildSlides(photos: ManifestPhoto[]) {
@@ -129,6 +135,7 @@ export function usePhotoSwipe(
   const showFacesRef = useRef(showFaces)
   showFacesRef.current = showFaces
   const [currentPhotoName, setCurrentPhotoName] = useState<string | null>(null)
+  const [topBarEl, setTopBarEl] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
     let lightbox: any
@@ -193,6 +200,22 @@ export function usePhotoSwipe(
             const slide = pswp.currSlide?.data
             if (!slide) return
 
+            const toastStyle = {
+              background: "transparent",
+              border: "none",
+              color: "rgba(255,255,255,0.7)",
+              fontSize: "14px",
+              letterSpacing: "2px",
+              textTransform: "lowercase" as const,
+              boxShadow: "none",
+            }
+
+            if (isIOS()) {
+              window.open(slide.downloadUrl, "_blank")
+              toast("long-press image to save", { style: toastStyle })
+              return
+            }
+
             fetch(slide.downloadUrl)
               .then((res) => res.blob())
               .then((blob) => {
@@ -202,21 +225,24 @@ export function usePhotoSwipe(
                 a.download = slide.photoName || "photo"
                 a.click()
                 URL.revokeObjectURL(blobUrl)
-                toast("saved", {
-                  style: {
-                    background: "transparent",
-                    border: "none",
-                    color: "rgba(255,255,255,0.7)",
-                    fontSize: "14px",
-                    letterSpacing: "2px",
-                    textTransform: "lowercase",
-                    boxShadow: "none",
-                  },
-                })
+                toast("saved", { style: toastStyle })
               })
               .catch(() => {
                 window.open(slide.downloadUrl, "_blank")
               })
+          },
+        })
+
+        // React portal target — sits left of the download button
+        lightbox.pswp.ui.registerElement({
+          name: "react-portal",
+          order: 7,
+          isButton: false,
+          appendTo: "bar",
+          html: "",
+          onInit: (el: HTMLElement) => {
+            el.style.cssText = "display:flex;align-items:center;margin-right:4px;"
+            setTopBarEl(el)
           },
         })
 
@@ -239,20 +265,23 @@ export function usePhotoSwipe(
         })
       })
 
-      // Face overlay: contentResize fires on the pswp instance when a
-      // slide image gets its display size. Register on lightbox so the
-      // handler is attached before pswp dispatches its first events
-      // (change + contentResize fire BEFORE afterInit).
+      // Size the face overlay container when PhotoSwipe calculates
+      // the display dimensions (fires before the image finishes loading).
       lightbox.on("contentResize", (e: any) => {
         const { content, width, height } = e
-        const slide = content?.slide
-        const overlay = getOrCreateOverlay(slide)
+        const overlay = getOrCreateOverlay(content?.slide)
         if (!overlay) return
 
         overlay.style.width = width + "px"
         overlay.style.height = height + "px"
+      })
 
-        if (slide === lightbox.pswp?.currSlide) {
+      // Load face boxes only after the slide image has fully loaded.
+      lightbox.on("loadComplete", (e: any) => {
+        const slide = e.slide ?? e.content?.slide
+        if (!slide || slide !== lightbox.pswp?.currSlide) return
+        const overlay = getOrCreateOverlay(slide)
+        if (overlay) {
           loadFacesForOverlay(overlay, slide.data?.photoName, showFacesRef.current)
         }
       })
@@ -261,15 +290,20 @@ export function usePhotoSwipe(
         const pswp = lightbox.pswp
         setCurrentPhotoName(pswp?.currSlide?.data?.photoName ?? null)
 
+        // If the slide is already loaded (cached/preloaded), show faces now.
+        // Otherwise loadComplete will handle it.
         const slide = pswp?.currSlide
-        const overlay = slide?.container?.querySelector(".pswp-face-overlay") as HTMLDivElement | null
-        if (overlay) {
-          loadFacesForOverlay(overlay, slide.data?.photoName, showFacesRef.current)
+        if (slide?.content?.state === "loaded") {
+          const overlay = getOrCreateOverlay(slide)
+          if (overlay) {
+            loadFacesForOverlay(overlay, slide.data?.photoName, showFacesRef.current)
+          }
         }
       })
 
       lightbox.on("destroy", () => {
         setCurrentPhotoName(null)
+        setTopBarEl(null)
       })
 
       lightbox.init()
@@ -306,5 +340,5 @@ export function usePhotoSwipe(
     lightboxRef.current?.loadAndOpen(index)
   }, [])
 
-  return { open, currentPhotoName }
+  return { open, currentPhotoName, topBarEl }
 }

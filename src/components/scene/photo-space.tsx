@@ -1,6 +1,6 @@
 "use client"
 
-import { Canvas } from "@react-three/fiber"
+import { Canvas, useFrame } from "@react-three/fiber"
 import { Suspense, useMemo, useCallback, useRef, useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -9,35 +9,80 @@ import { Particles } from "./particles"
 import { CameraControls } from "./camera-controls"
 import { PeopleBar } from "./people-bar"
 import { DesktopGrid } from "./desktop-grid"
-import { useManifest } from "@/hooks/use-manifest"
+import { useInfinite3DPhotos } from "@/hooks/use-infinite-3d-photos"
+import { useInfinitePhotos } from "@/hooks/use-infinite-photos"
 import { useFilterParams } from "@/hooks/use-filter-params"
 import { GithubBadge } from "@/components/github-badge"
 import { cn } from "@/lib/utils"
-import { SPREAD } from "@/lib/constants"
-import type { ProcessedPhoto } from "@/types/photo"
-
-type ViewMode = "3d" | "grid"
+import { getShellBounds } from "@/lib/shell-placement"
 
 const EVENTS = ["all", "codebrew", "sheships"] as const
 
+function CameraDistanceTrigger({
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
+  pageCount,
+  filterKey,
+}: {
+  hasNextPage: boolean
+  isFetchingNextPage: boolean
+  fetchNextPage: () => void
+  pageCount: number
+  filterKey: string
+}) {
+  const triggeredRef = useRef(new Set<number>())
+  const prevFilterKey = useRef(filterKey)
+
+  // Reset triggered set when filters change
+  if (prevFilterKey.current !== filterKey) {
+    triggeredRef.current = new Set()
+    prevFilterKey.current = filterKey
+  }
+
+  useFrame((state) => {
+    if (!hasNextPage || isFetchingNextPage) return
+
+    const camDist = state.camera.position.length()
+    const nextShell = getShellBounds(pageCount)
+
+    // Trigger when camera approaches the next shell boundary
+    if (camDist > nextShell.inner - 30 && !triggeredRef.current.has(pageCount)) {
+      triggeredRef.current.add(pageCount)
+      fetchNextPage()
+    }
+  })
+
+  return null
+}
+
 export function PhotoSpace() {
-  const { event: selectedEvent, personId: selectedPersonId, setEvent: setSelectedEvent, setPerson: setSelectedPersonId } = useFilterParams()
-  const { photos: manifest } = useManifest(selectedEvent)
+  const { event: selectedEvent, personId: selectedPersonId, viewMode, setEvent: setSelectedEvent, setPerson: setSelectedPersonId, setViewMode } = useFilterParams()
+
+  // 3D mode: paginated shell loading
+  const {
+    photos,
+    loading: photos3dLoading,
+    hasNextPage: has3dNextPage,
+    isFetchingNextPage: isFetching3dNextPage,
+    fetchNextPage: fetch3dNextPage,
+  } = useInfinite3DPhotos(selectedEvent)
+
+  // Grid mode: paginated infinite scroll
+  const {
+    photos: gridPhotos,
+    loading: gridLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfinitePhotos(selectedEvent, selectedPersonId)
+
   const downloadingRef = useRef(false)
   const isDragging = useRef(false)
   const pointerDownPos = useRef({ x: 0, y: 0 })
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === "undefined") return "3d"
-    return (localStorage.getItem("photo-space-view") as ViewMode) || "3d"
-  })
   const [showLandmarks, setShowLandmarks] = useState(true)
 
-  // Persist view mode
-  useEffect(() => {
-    localStorage.setItem("photo-space-view", viewMode)
-  }, [viewMode])
-
-  // Fetch photo names for selected person
+  // 3D mode: fetch photo names for person highlighting
   const { data: personPhotoNames } = useQuery({
     queryKey: ["person-photos", selectedPersonId],
     queryFn: async () => {
@@ -47,7 +92,7 @@ export function PhotoSpace() {
       if (!res.ok) throw new Error("Failed to fetch photos")
       return res.json() as Promise<string[]>
     },
-    enabled: !!selectedPersonId,
+    enabled: !!selectedPersonId && viewMode === "3d",
   })
 
   const highlightedSet = useMemo(() => {
@@ -56,41 +101,25 @@ export function PhotoSpace() {
     return new Set(personPhotoNames)
   }, [selectedPersonId, personPhotoNames])
 
-  // Filtered photos for grid mode
-  const filteredManifest = useMemo(() => {
-    if (!highlightedSet) return manifest
-    return manifest.filter((p) => highlightedSet.has(p.name))
-  }, [manifest, highlightedSet])
+  // Track page count for CameraDistanceTrigger
+  const pageCount = useMemo(() => {
+    // photos are placed in shells by page — count based on total loaded
+    // Each page is 30 photos by default
+    return Math.ceil(photos.length / 30) || 1
+  }, [photos.length])
 
-  // Compute random positions/rotations once when manifest loads
-  const photos = useMemo<ProcessedPhoto[]>(
-    () =>
-      manifest.map((photo) => ({
-        ...photo,
-        position: [
-          (Math.random() - 0.5) * SPREAD,
-          (Math.random() - 0.5) * SPREAD,
-          (Math.random() - 0.5) * SPREAD,
-        ] as [number, number, number],
-        rotation: [
-          (Math.random() - 0.5) * 0.3,
-          (Math.random() - 0.5) * 0.3,
-          (Math.random() - 0.5) * 0.15,
-        ] as [number, number, number],
-        size: 25 + Math.random() * 10,
-        floatSpeed: 0.2 + Math.random() * 0.5,
-        floatOffset: Math.random() * Math.PI * 2,
-      })),
-    [manifest]
-  )
+  const filterKey = `${selectedEvent ?? "all"}-${selectedPersonId ?? "none"}`
 
   // Download full-quality photo with throttle
   const handleDownload = useCallback(async (filename: string) => {
     if (downloadingRef.current) return
     downloadingRef.current = true
 
-    const photo = manifest.find((p) => p.name === filename)
-    if (!photo) return
+    const photo = photos.find((p) => p.name === filename)
+    if (!photo) {
+      downloadingRef.current = false
+      return
+    }
 
     try {
       const res = await fetch(photo.url)
@@ -118,7 +147,7 @@ export function PhotoSpace() {
     } finally {
       downloadingRef.current = false
     }
-  }, [manifest])
+  }, [photos])
 
   return (
     <div
@@ -232,6 +261,14 @@ export function PhotoSpace() {
             ))}
           </Suspense>
 
+          <CameraDistanceTrigger
+            hasNextPage={has3dNextPage}
+            isFetchingNextPage={isFetching3dNextPage}
+            fetchNextPage={fetch3dNextPage}
+            pageCount={pageCount}
+            filterKey={filterKey}
+          />
+
           <Particles />
           <CameraControls />
         </Canvas>
@@ -240,11 +277,17 @@ export function PhotoSpace() {
       {/* Grid View */}
       {viewMode === "grid" && (
         <div className="pt-16">
-          <DesktopGrid photos={filteredManifest} showLandmarks={showLandmarks} />
-          {filteredManifest.length > 0 && (
+          <DesktopGrid
+            photos={gridPhotos}
+            showLandmarks={showLandmarks}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            onLoadMore={fetchNextPage}
+          />
+          {!gridLoading && !hasNextPage && gridPhotos.length > 0 && (
             <div className="flex items-center justify-center py-8">
               <span className="font-mono text-[10px] lowercase tracking-[3px] text-white/20">
-                {filteredManifest.length} photos
+                {gridPhotos.length} photos
               </span>
             </div>
           )}
@@ -254,6 +297,7 @@ export function PhotoSpace() {
       <PeopleBar
         selectedPersonId={selectedPersonId}
         onSelectPerson={setSelectedPersonId}
+        event={selectedEvent}
       />
     </div>
   )

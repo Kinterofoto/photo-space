@@ -18,6 +18,7 @@ export function PersonNameDialog({
 }: PersonNameDialogProps) {
   const [name, setName] = useState("")
   const [visible, setVisible] = useState(false)
+  const [keyboardOffset, setKeyboardOffset] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -33,6 +34,25 @@ export function PersonNameDialog({
       setVisible(false)
     }
   }, [person])
+
+  // Adjust for iOS virtual keyboard using visualViewport API
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null
+    if (!vv) return
+
+    function onResize() {
+      if (!vv) return
+      const offset = window.innerHeight - vv.height - vv.offsetTop
+      setKeyboardOffset(Math.max(0, offset))
+    }
+
+    vv.addEventListener("resize", onResize)
+    vv.addEventListener("scroll", onResize)
+    return () => {
+      vv.removeEventListener("resize", onResize)
+      vv.removeEventListener("scroll", onResize)
+    }
+  }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -60,9 +80,10 @@ export function PersonNameDialog({
     >
       <div
         className={cn(
-          "w-full max-w-md rounded-t-2xl border-t border-white/[0.06] bg-zinc-950 px-6 pb-[env(safe-area-inset-bottom,24px)] pt-6 transition-transform duration-200",
+          "w-full max-w-md rounded-t-2xl border-t border-white/[0.06] bg-zinc-950 px-6 pb-[env(safe-area-inset-bottom,24px)] pt-6 transition-all duration-200",
           visible ? "translate-y-0" : "translate-y-full"
         )}
+        style={{ marginBottom: keyboardOffset }}
       >
         <div className="mb-4 flex items-center justify-between">
           <span className="font-mono text-[11px] lowercase tracking-[3px] text-white/40">

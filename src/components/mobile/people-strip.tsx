@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef } from "react"
+import { useRef, useEffect } from "react"
 import { usePersons, type PersonWithFace } from "@/hooks/use-persons"
 import { cn } from "@/lib/utils"
 
@@ -8,6 +8,7 @@ interface PeopleStripProps {
   selectedPersonId: string | null
   onSelectPerson: (personId: string | null) => void
   onTapUnnamed: (person: PersonWithFace) => void
+  event?: string | null
 }
 
 function PersonAvatar({ person }: { person: PersonWithFace }) {
@@ -34,18 +35,32 @@ export function PeopleStrip({
   selectedPersonId,
   onSelectPerson,
   onTapUnnamed,
+  event,
 }: PeopleStripProps) {
-  const { data: persons, isLoading } = usePersons()
+  const { data: persons, isLoading } = usePersons(event)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll selected person to center
+  useEffect(() => {
+    if (!selectedPersonId || !scrollRef.current) return
+    const el = scrollRef.current.querySelector(`[data-person-id="${selectedPersonId}"]`)
+    if (el) {
+      el.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" })
+    }
+  }, [selectedPersonId])
 
   if (isLoading || !persons || persons.length === 0) return null
 
   return (
-    <div
-      ref={scrollRef}
-      className="flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none"
-      style={{ WebkitOverflowScrolling: "touch" }}
-    >
+    <div className="relative">
+      {/* Edge fade gradients */}
+      <div className="pointer-events-none absolute left-0 top-0 z-10 h-full w-6 bg-gradient-to-r from-black/70 to-transparent" />
+      <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-6 bg-gradient-to-l from-black/70 to-transparent" />
+      <div
+        ref={scrollRef}
+        className="flex gap-3 overflow-x-auto px-4 py-3"
+        style={{ WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}
+      >
       {/* All pill */}
       <button
         onClick={() => onSelectPerson(null)}
@@ -63,7 +78,7 @@ export function PeopleStrip({
       {persons.map((person) => {
         const isSelected = selectedPersonId === person.id
         return (
-          <div key={person.id} className="relative flex shrink-0 flex-col items-center gap-1">
+          <div key={person.id} data-person-id={person.id} className="relative flex shrink-0 flex-col items-center gap-1">
             <button
               onClick={() =>
                 onSelectPerson(isSelected ? null : person.id)
@@ -108,6 +123,7 @@ export function PeopleStrip({
           </div>
         )
       })}
+      </div>
     </div>
   )
 }

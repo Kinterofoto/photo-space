@@ -10,6 +10,7 @@ import { useState } from "react"
 interface PeopleBarProps {
   selectedPersonId: string | null
   onSelectPerson: (personId: string | null) => void
+  event?: string | null
 }
 
 function PersonAvatar({ person }: { person: PersonWithFace }) {
@@ -32,8 +33,8 @@ function PersonAvatar({ person }: { person: PersonWithFace }) {
   )
 }
 
-export function PeopleBar({ selectedPersonId, onSelectPerson }: PeopleBarProps) {
-  const { data: persons, isLoading } = usePersons()
+export function PeopleBar({ selectedPersonId, onSelectPerson, event }: PeopleBarProps) {
+  const { data: persons, isLoading } = usePersons(event)
   const namePerson = useNamePerson()
   const [namingPerson, setNamingPerson] = useState<PersonWithFace | null>(null)
 
@@ -42,7 +43,7 @@ export function PeopleBar({ selectedPersonId, onSelectPerson }: PeopleBarProps) 
   return (
     <>
       <div className="fixed bottom-6 left-1/2 z-20 w-full max-w-[min(90vw,600px)] -translate-x-1/2">
-        <div className="rounded-full border border-white/[0.06] bg-black/60 backdrop-blur-xl">
+        <div className="overflow-hidden rounded-full border border-white/[0.06] bg-black/60 backdrop-blur-xl">
           <ScrollArea className="w-full">
             <div className="flex items-center gap-2 px-4 py-2">
               {/* All pill */}
@@ -83,10 +84,10 @@ export function PeopleBar({ selectedPersonId, onSelectPerson }: PeopleBarProps) 
                       </div>
                       <span
                         className={cn(
-                          "max-w-[48px] truncate font-mono text-[8px] lowercase tracking-wide transition-colors",
+                          "max-w-[60px] truncate font-mono text-[10px] lowercase tracking-wide transition-colors",
                           isSelected
-                            ? "text-white/50"
-                            : "text-white/15 group-hover:text-white/30"
+                            ? "text-white/70"
+                            : "text-white/40 group-hover:text-white/55"
                         )}
                       >
                         {person.name || `face ${person.faceCount}`}
@@ -112,7 +113,7 @@ export function PeopleBar({ selectedPersonId, onSelectPerson }: PeopleBarProps) 
                 )
               })}
             </div>
-            <ScrollBar orientation="horizontal" className="h-1.5" />
+            <ScrollBar orientation="horizontal" className="h-0 opacity-0" />
           </ScrollArea>
         </div>
       </div>

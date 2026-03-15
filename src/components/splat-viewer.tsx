@@ -20,7 +20,7 @@ interface SplatViewerProps {
 const INITIAL_CAM = new THREE.Vector3(0, 0, 3)
 const INITIAL_TARGET = new THREE.Vector3(0, 0, 0)
 
-function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.MutableRefObject<(() => void) | null> }) {
+function SplatScene({ plyUrl, onResetRef, onLoaded }: { plyUrl: string; onResetRef: React.MutableRefObject<(() => void) | null>; onLoaded: () => void }) {
   const { gl, scene, camera } = useThree()
   const sparkRef = useRef<any>(null)
   const splatRef = useRef<any>(null)
@@ -35,7 +35,10 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
     scene.add(spark)
     sparkRef.current = spark
 
-    const splat = new SplatMeshClass({ url: plyUrl })
+    const splat = new SplatMeshClass({
+      url: plyUrl,
+      onLoad: () => onLoaded(),
+    })
     spark.add(splat)
     splatRef.current = splat
 
@@ -44,7 +47,7 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
       spark.dispose?.()
       splat.dispose?.()
     }
-  }, [gl, scene, plyUrl])
+  }, [gl, scene, plyUrl, onLoaded])
 
   // Expose reset function
   useEffect(() => {
@@ -93,8 +96,10 @@ function SplatScene({ plyUrl, onResetRef }: { plyUrl: string; onResetRef: React.
 export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
   const [isVisible, setIsVisible] = useState(false)
   const [sparkReady, setSparkReady] = useState(sparkExtended)
+  const [splatLoaded, setSplatLoaded] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const resetRef = useRef<(() => void) | null>(null)
+  const handleSplatLoaded = useCallback(() => setSplatLoaded(true), [])
 
   useEffect(() => {
     if (sparkExtended) {
@@ -137,7 +142,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[60] flex flex-col transition-all duration-250",
+        "fixed inset-0 z-[200000] flex flex-col transition-all duration-250",
         isVisible ? "bg-black" : "bg-transparent pointer-events-none"
       )}
       onClick={(e) => e.stopPropagation()}
@@ -177,7 +182,7 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
       </div>
 
       {/* 3D Canvas */}
-      <div className="flex-1" onWheel={(e) => e.stopPropagation()}>
+      <div className="relative flex-1" onWheel={(e) => e.stopPropagation()}>
         {loadError ? (
           <div className="flex h-full items-center justify-center">
             <span className="font-mono text-sm text-white/30">{loadError}</span>
@@ -187,13 +192,23 @@ export function SplatViewer({ plyUrl, photoName, onClose }: SplatViewerProps) {
             <div className="h-5 w-5 animate-spin rounded-full border-[1.5px] border-white/10 border-t-white/50" />
           </div>
         ) : (
-          <Canvas
-            camera={{ position: [0, 0, 3], fov: 50 }}
-            dpr={[1, 2]}
-            gl={{ antialias: false }}
-          >
-            <SplatScene plyUrl={plyUrl} onResetRef={resetRef} />
-          </Canvas>
+          <>
+            <Canvas
+              camera={{ position: [0, 0, 3], fov: 50 }}
+              dpr={[1, 2]}
+              gl={{ antialias: false }}
+            >
+              <SplatScene plyUrl={plyUrl} onResetRef={resetRef} onLoaded={handleSplatLoaded} />
+            </Canvas>
+            {!splatLoaded && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="h-5 w-5 animate-spin rounded-full border-[1.5px] border-white/10 border-t-white/50" />
+                  <span className="font-mono text-[10px] lowercase tracking-wider text-white/30">loading splat...</span>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

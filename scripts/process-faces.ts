@@ -4,15 +4,11 @@ import {
   CreateCollectionCommand,
   DescribeCollectionCommand,
 } from "@aws-sdk/client-rekognition"
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const H = require("@vladmandic/human")
-import * as canvas from "canvas"
 import { neon } from "@neondatabase/serverless"
 
 // ── Config ──
 const MIN_CONFIDENCE = 90 // Rekognition confidence threshold
-const CONCURRENCY = 3 // lower than before due to API calls
-const IOU_THRESHOLD = 0.3 // min IoU to match Rekognition↔human faces
+const CONCURRENCY = 5
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024 // Rekognition 5MB limit
 
 const sql = neon(process.env.DATABASE_URL!)
@@ -48,35 +44,6 @@ async function ensureCollection() {
       throw err
     }
   }
-}
-
-// ── Init @vladmandic/human ──
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function initHuman(): Promise<any> {
-  const config = {
-    modelBasePath: "https://vladmandic.github.io/human-models/models/",
-    backend: "tensorflow",
-    face: {
-      enabled: true,
-      detector: { enabled: true, rotation: false },
-      mesh: { enabled: true },
-      iris: { enabled: false },
-      description: { enabled: false },
-      emotion: { enabled: false },
-      antispoof: { enabled: false },
-      liveness: { enabled: false },
-    },
-    body: { enabled: false },
-    hand: { enabled: false },
-    object: { enabled: false },
-    gesture: { enabled: false },
-    segmentation: { enabled: false },
-  }
-
-  const human = new H.Human(config)
-  await human.load()
-  console.log("@vladmandic/human models loaded.")
-  return human
 }
 
 // ── Fetch image bytes ──
@@ -120,29 +87,12 @@ function buildThumbnailUrl(
   )
 }
 
-// ── IoU between two normalized boxes ──
-function iou(
-  a: { x: number; y: number; w: number; h: number },
-  b: { x: number; y: number; w: number; h: number }
-): number {
-  const x1 = Math.max(a.x, b.x)
-  const y1 = Math.max(a.y, b.y)
-  const x2 = Math.min(a.x + a.w, b.x + b.w)
-  const y2 = Math.min(a.y + a.h, b.y + b.h)
-
-  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1)
-  const areaA = a.w * a.h
-  const areaB = b.w * b.h
-
-  return inter / (areaA + areaB - inter)
-}
-
 // ── Process one photo ──
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function processPhoto(
-  human: any,
   photoName: string,
-  photoUrl: string
+  photoUrl: string,
+  imgWidth: number,
+  imgHeight: number
 ) {
   // Check if already processed
   const existing = await sql`
@@ -155,147 +105,75 @@ async function processPhoto(
 
   // Fetch image bytes (resize if needed for Rekognition 5MB limit)
   let imageBytes = await fetchImageBytes(photoUrl)
-  let usedUrl = photoUrl
 
   if (imageBytes.length > MAX_IMAGE_BYTES) {
     console.log(
       `  ${photoName}: image ${(imageBytes.length / 1e6).toFixed(1)}MB > 5MB, resizing...`
     )
-    usedUrl = getResizedUrl(photoUrl, 2048)
-    imageBytes = await fetchImageBytes(usedUrl)
+    imageBytes = await fetchImageBytes(getResizedUrl(photoUrl, 2048))
   }
 
-  // Get image dimensions via canvas
-  const img = new canvas.Image()
-  img.src = imageBytes
-  const imgWidth = img.width
-  const imgHeight = img.height
-
-  // ── Rekognition: IndexFaces ──
-  let rekFaces: {
-    faceId: string
-    box: { x: number; y: number; w: number; h: number }
-    confidence: number
-  }[] = []
-
+  // ── Rekognition: IndexFaces with ALL landmarks ──
   try {
     const indexResult = await rekognition.send(
       new IndexFacesCommand({
         CollectionId: COLLECTION_ID,
         Image: { Bytes: imageBytes },
         ExternalImageId: photoName,
-        DetectionAttributes: ["DEFAULT"],
+        DetectionAttributes: ["ALL"],
         QualityFilter: "AUTO",
       })
     )
 
-    rekFaces = (indexResult.FaceRecords ?? [])
-      .filter(
-        (r) =>
-          r.Face?.FaceId &&
-          r.Face.BoundingBox &&
-          (r.Face.Confidence ?? 0) >= MIN_CONFIDENCE
-      )
-      .map((r) => ({
-        faceId: r.Face!.FaceId!,
-        box: {
-          x: r.Face!.BoundingBox!.Left ?? 0,
-          y: r.Face!.BoundingBox!.Top ?? 0,
-          w: r.Face!.BoundingBox!.Width ?? 0,
-          h: r.Face!.BoundingBox!.Height ?? 0,
-        },
-        confidence: r.Face!.Confidence ?? 0,
-      }))
-  } catch (err) {
-    console.error(`  ${photoName}: Rekognition error:`, err)
-    return
-  }
-
-  if (rekFaces.length === 0) {
-    console.log(`  ${photoName}: no faces (Rekognition)`)
-    return
-  }
-
-  // ── @vladmandic/human: face mesh landmarks ──
-  // Create a tensor from the image buffer
-  const inputCanvas = canvas.createCanvas(imgWidth, imgHeight)
-  const ctx = inputCanvas.getContext("2d")
-  ctx.drawImage(img, 0, 0)
-  const imageData = ctx.getImageData(0, 0, imgWidth, imgHeight)
-
-  // Create a tensor-compatible input
-  const tensor = human.tf.tensor4d(
-    new Float32Array(imageData.data).map((v: number) => v / 255),
-    [1, imgHeight, imgWidth, 4]
-  )
-  // Remove alpha channel → [1, h, w, 3]
-  const rgb = human.tf.slice(tensor, [0, 0, 0, 0], [-1, -1, -1, 3])
-  tensor.dispose()
-
-  const humanResult = await human.detect(rgb)
-  rgb.dispose()
-
-  const humanFaces = (humanResult.face ?? []).map((f) => ({
-    box: {
-      x: f.box[0] / imgWidth,
-      y: f.box[1] / imgHeight,
-      w: f.box[2] / imgWidth,
-      h: f.box[3] / imgHeight,
-    },
-    landmarks: (f.mesh ?? []).map((pt) => ({
-      x: pt[0] / imgWidth,
-      y: pt[1] / imgHeight,
-    })),
-  }))
-
-  // ── Match Rekognition faces ↔ human faces by IoU ──
-  let matchedCount = 0
-
-  for (const rekFace of rekFaces) {
-    // Find best matching human face
-    let bestIoU = 0
-    let bestHumanIdx = -1
-
-    for (let i = 0; i < humanFaces.length; i++) {
-      const score = iou(rekFace.box, humanFaces[i].box)
-      if (score > bestIoU) {
-        bestIoU = score
-        bestHumanIdx = i
-      }
-    }
-
-    const landmarks =
-      bestIoU >= IOU_THRESHOLD && bestHumanIdx >= 0
-        ? humanFaces[bestHumanIdx].landmarks
-        : [] // no mesh match — will render as dots fallback
-
-    if (bestIoU >= IOU_THRESHOLD) matchedCount++
-
-    const thumbnail = buildThumbnailUrl(
-      photoUrl, // use original URL for thumbnail
-      rekFace.box,
-      imgWidth,
-      imgHeight
+    const records = (indexResult.FaceRecords ?? []).filter(
+      (r) =>
+        r.Face?.FaceId &&
+        r.Face.BoundingBox &&
+        (r.Face.Confidence ?? 0) >= MIN_CONFIDENCE
     )
 
-    await sql`
-      INSERT INTO faces (photo_name, aws_face_id, landmarks, box_x, box_y, box_w, box_h, thumbnail)
-      VALUES (
-        ${photoName},
-        ${rekFace.faceId},
-        ${JSON.stringify(landmarks)}::jsonb,
-        ${rekFace.box.x},
-        ${rekFace.box.y},
-        ${rekFace.box.w},
-        ${rekFace.box.h},
-        ${thumbnail}
-      )
-    `
-  }
+    if (records.length === 0) {
+      console.log(`  ${photoName}: no faces`)
+      return
+    }
 
-  console.log(
-    `  ${photoName}: ${rekFaces.length} face(s) indexed, ${matchedCount} mesh-matched`
-  )
+    for (const record of records) {
+      const face = record.Face!
+      const detail = record.FaceDetail
+      const box = {
+        x: face.BoundingBox!.Left ?? 0,
+        y: face.BoundingBox!.Top ?? 0,
+        w: face.BoundingBox!.Width ?? 0,
+        h: face.BoundingBox!.Height ?? 0,
+      }
+
+      // Extract Rekognition's ~30 landmarks as normalized {x, y}
+      const landmarks = (detail?.Landmarks ?? []).map((lm) => ({
+        x: lm.X ?? 0,
+        y: lm.Y ?? 0,
+      }))
+
+      const thumbnail = buildThumbnailUrl(photoUrl, box, imgWidth, imgHeight)
+
+      await sql`
+        INSERT INTO faces (photo_name, aws_face_id, landmarks, box_x, box_y, box_w, box_h, thumbnail)
+        VALUES (
+          ${photoName},
+          ${face.FaceId!},
+          ${JSON.stringify(landmarks)}::jsonb,
+          ${box.x},
+          ${box.y},
+          ${box.w},
+          ${box.h},
+          ${thumbnail}
+        )
+      `
+    }
+
+    console.log(`  ${photoName}: ${records.length} face(s) indexed`)
+  } catch (err) {
+    console.error(`  ${photoName}: Rekognition error:`, err)
+  }
 }
 
 // ── Main ──
@@ -303,11 +181,10 @@ async function main() {
   const eventFilter = process.argv[2] // optional event name filter
 
   await ensureCollection()
-  const human = await initHuman()
 
   const allPhotos = eventFilter
-    ? await sql`SELECT name, url FROM photos WHERE event = ${eventFilter} ORDER BY name ASC`
-    : await sql`SELECT name, url FROM photos ORDER BY name ASC`
+    ? await sql`SELECT name, url, width, height FROM photos WHERE event = ${eventFilter} ORDER BY name ASC`
+    : await sql`SELECT name, url, width, height FROM photos ORDER BY name ASC`
 
   if (allPhotos.length === 0) {
     console.error(
@@ -331,7 +208,7 @@ async function main() {
         const idx = i + j + 1
         console.log(`[${idx}/${allPhotos.length}] ${photo.name}`)
         try {
-          await processPhoto(human, photo.name, photo.url)
+          await processPhoto(photo.name, photo.url, photo.width ?? 2048, photo.height ?? 2048)
         } catch (err) {
           console.error(`  Error processing ${photo.name}:`, err)
         }

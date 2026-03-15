@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { useSplatStatus, useGenerateSplat } from "@/hooks/use-splat"
 import { SplatViewer } from "./splat-viewer"
 import { cn } from "@/lib/utils"
@@ -79,13 +80,15 @@ export function Generate3DButton({
         )}
       </button>
 
-      {showViewer && splatData && "plyUrl" in splatData && splatData.plyUrl && (
-        <SplatViewer
-          plyUrl={splatData.plyUrl}
-          photoName={photoName}
-          onClose={() => setShowViewer(false)}
-        />
-      )}
+      {showViewer && splatData && "plyUrl" in splatData && splatData.plyUrl &&
+        createPortal(
+          <SplatViewer
+            plyUrl={`/api/splats/ply?photo_name=${encodeURIComponent(photoName)}`}
+            photoName={photoName}
+            onClose={() => setShowViewer(false)}
+          />,
+          document.body
+        )}
     </>
   )
 }
